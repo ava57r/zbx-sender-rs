@@ -13,11 +13,11 @@ const ZBX_HDR_SIZE: usize = 13;
 
 pub struct Sender {
     server: String,
-    port: u32,
+    port: u16,
 }
 
 impl Sender {
-    pub fn new(server: String, port: u32) -> Sender {
+    pub fn new(server: String, port: u16) -> Sender {
         Sender { server, port }
     }
 
@@ -25,7 +25,6 @@ impl Sender {
         let msg = Message::new(SendValue { host, key, value });
 
         let byte_msg = serde_json::to_string(&msg).unwrap();
-        println!("{}", byte_msg);
         let data = byte_msg.as_bytes();
 
         let mut send_data: Vec<u8> = Vec::with_capacity(ZBX_HDR_SIZE + data.len());
@@ -35,15 +34,13 @@ impl Sender {
             .unwrap();
         send_data.extend(&[0, 0, 0, 0]);
         send_data.extend(data.iter());
-        println!("{:?}", send_data);
 
         let addr = format!("{0}:{1}", self.server, self.port);
         let mut stream = TcpStream::connect(addr)?;
         stream.write(&send_data)?;
 
         let mut zbx_hdr = [0; ZBX_HDR_SIZE];
-        let read_bytes = stream.read(&mut zbx_hdr)?;
-        println!("{:?} - {}", zbx_hdr, read_bytes);
+        stream.read(&mut zbx_hdr)?;
         assert_eq!(ZBX_HDR, &zbx_hdr[..5]);
 
         let mut rdr = io::Cursor::new(zbx_hdr);
