@@ -3,6 +3,9 @@ extern crate serde_derive;
 extern crate byteorder;
 extern crate serde_json;
 
+#[macro_use]
+extern crate failure;
+
 use std::io::prelude::*;
 use std::io;
 use std::net::TcpStream;
@@ -21,9 +24,7 @@ impl Sender {
         Sender { server, port }
     }
 
-    pub fn send(&self, host: String, key: String, value: String) -> io::Result<Response> {
-        let msg = Message::new(SendValue { host, key, value });
-
+    pub fn send(&self, msg: Message) -> io::Result<Response> {
         let byte_msg = serde_json::to_string(&msg).unwrap();
         let data = byte_msg.as_bytes();
 
@@ -56,17 +57,21 @@ impl Sender {
 
         Ok(response)
     }
+
+    pub fn send_value(&self, host: String, key: String, value: String) -> io::Result<Response> {
+        self.send(Message::new(SendValue { host, key, value }))
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct SendValue {
+pub struct SendValue {
     host: String,
     key: String,
     value: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct Message {
+pub struct Message {
     request: String,
     data: Vec<SendValue>,
 }
