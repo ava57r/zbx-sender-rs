@@ -6,6 +6,10 @@ extern crate serde_json;
 #[macro_use]
 extern crate failure;
 
+mod error;
+
+pub use error::Result;
+
 use std::io::prelude::*;
 use std::io;
 use std::net::TcpStream;
@@ -24,15 +28,13 @@ impl Sender {
         Sender { server, port }
     }
 
-    pub fn send(&self, msg: Message) -> io::Result<Response> {
-        let byte_msg = serde_json::to_string(&msg).unwrap();
+    pub fn send(&self, msg: Message) -> Result<Response> {
+        let byte_msg = serde_json::to_string(&msg)?;
         let data = byte_msg.as_bytes();
 
         let mut send_data: Vec<u8> = Vec::with_capacity(ZBX_HDR_SIZE + data.len());
         send_data.extend(ZBX_HDR);
-        send_data
-            .write_u32::<LittleEndian>(data.len() as u32)
-            .unwrap();
+        send_data.write_u32::<LittleEndian>(data.len() as u32)?;
         send_data.extend(&[0, 0, 0, 0]);
         send_data.extend(data.iter());
 
@@ -42,23 +44,25 @@ impl Sender {
 
         let mut zbx_hdr = [0; ZBX_HDR_SIZE];
         stream.read(&mut zbx_hdr)?;
-        assert_eq!(ZBX_HDR, &zbx_hdr[..5]);
+        if ZBX_HDR != &zbx_hdr[..5] {
+            return Err(error::Error::InvalidHeader);
+        }
 
         let mut rdr = io::Cursor::new(zbx_hdr);
         rdr.set_position(5);
-        let data_length = rdr.read_u32::<LittleEndian>().unwrap();
+        let data_length = rdr.read_u32::<LittleEndian>()?;
         if data_length == 0 {
-            panic!("Invalid response");
+            return Err(error::Error::InvalidHeader);
         }
 
         let mut read_data = vec![];
-        stream.read_to_end(&mut read_data).unwrap();
-        let response: Response = serde_json::from_slice(&read_data).unwrap();
+        stream.read_to_end(&mut read_data)?;
+        let response: Response = serde_json::from_slice(&read_data)?;
 
         Ok(response)
     }
 
-    pub fn send_value(&self, host: String, key: String, value: String) -> io::Result<Response> {
+    pub fn send_value(&self, host: String, key: String, value: String) -> Result<Response> {
         self.send(Message::new(SendValue { host, key, value }))
     }
 }
