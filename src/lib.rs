@@ -75,7 +75,7 @@ pub struct SendValue {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message {
-    request: String,
+    request: &'static str,
     data: Vec<SendValue>,
 }
 
@@ -84,7 +84,7 @@ impl Message {
 
     pub fn new(value: SendValue) -> Message {
         Message {
-            request: Message::REQUEST.to_owned(),
+            request: Message::REQUEST,
             data: vec![value],
         }
     }
