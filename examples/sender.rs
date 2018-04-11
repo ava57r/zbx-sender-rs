@@ -5,7 +5,7 @@ use std::env;
 
 fn send_one_value(command: &str) -> Result<Response> {
     let sender = Sender::new(command.to_owned(), 10051);
-    sender.send_value("host1".to_owned(), "key1".to_owned(), "value".to_owned())
+    sender.send(("host1", "key1", "value"))
 }
 
 fn main() {

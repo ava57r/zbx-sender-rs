@@ -28,8 +28,11 @@ impl Sender {
         Sender { server, port }
     }
 
-    pub fn send(&self, msg: Message) -> Result<Response> {
-        let byte_msg = serde_json::to_string(&msg)?;
+    pub fn send<T>(&self, msg: T) -> Result<Response>
+    where
+        T: ToMessage,
+    {
+        let byte_msg = serde_json::to_string(&msg.to_message())?;
         let data = byte_msg.as_bytes();
 
         let mut send_data: Vec<u8> = Vec::with_capacity(ZBX_HDR_SIZE + data.len());
@@ -61,10 +64,6 @@ impl Sender {
 
         Ok(response)
     }
-
-    pub fn send_value(&self, host: String, key: String, value: String) -> Result<Response> {
-        self.send(Message::new(SendValue { host, key, value }))
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -88,6 +87,42 @@ impl Message {
             request: Message::REQUEST.to_owned(),
             data: vec![value],
         }
+    }
+}
+
+pub trait ToMessage {
+    fn to_message(self) -> Message;
+}
+
+impl ToMessage for Message {
+    fn to_message(self) -> Message {
+        self
+    }
+}
+
+impl<'a> ToMessage for (&'a str, &'a str, &'a str) {
+    fn to_message(self) -> Message {
+        let (host, key, value) = self;
+        let sv = SendValue {
+            host: host.to_owned(),
+            key: key.to_owned(),
+            value: value.to_owned(),
+        };
+
+        Message::new(sv)
+    }
+}
+
+impl<'a> From<(&'a str, &'a str, &'a str)> for Message {
+    fn from(msg: (&'a str, &'a str, &'a str)) -> Message {
+        let (host, key, value) = msg;
+        let sv = SendValue {
+            host: host.to_owned(),
+            key: key.to_owned(),
+            value: value.to_owned(),
+        };
+
+        Message::new(sv)
     }
 }
 
