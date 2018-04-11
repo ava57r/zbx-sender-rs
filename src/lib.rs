@@ -73,6 +73,17 @@ pub struct SendValue {
     value: String,
 }
 
+impl<'a> From<(&'a str, &'a str, &'a str)> for SendValue {
+    fn from(msg: (&'a str, &'a str, &'a str)) -> SendValue {
+        let (host, key, value) = msg;
+        SendValue {
+            host: host.to_owned(),
+            key: key.to_owned(),
+            value: value.to_owned(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message {
     request: &'static str,
@@ -86,6 +97,19 @@ impl Message {
         Message {
             request: Message::REQUEST,
             data: vec![value],
+        }
+    }
+
+    pub fn add(&mut self, value: SendValue) {
+        self.data.push(value)
+    }
+}
+
+impl Default for Message {
+    fn default() -> Message {
+        Message {
+            request: Message::REQUEST,
+            data: vec![],
         }
     }
 }
@@ -102,27 +126,22 @@ impl ToMessage for Message {
 
 impl<'a> ToMessage for (&'a str, &'a str, &'a str) {
     fn to_message(self) -> Message {
-        let (host, key, value) = self;
-        let sv = SendValue {
-            host: host.to_owned(),
-            key: key.to_owned(),
-            value: value.to_owned(),
-        };
-
-        Message::new(sv)
+        Message::new(SendValue::from(self))
     }
 }
 
 impl<'a> From<(&'a str, &'a str, &'a str)> for Message {
     fn from(msg: (&'a str, &'a str, &'a str)) -> Message {
-        let (host, key, value) = msg;
-        let sv = SendValue {
-            host: host.to_owned(),
-            key: key.to_owned(),
-            value: value.to_owned(),
-        };
+        Message::new(SendValue::from(msg))
+    }
+}
 
-        Message::new(sv)
+impl ToMessage for Vec<SendValue> {
+    fn to_message(self) -> Message {
+        let mut msg = Message::default();
+        msg.data.extend(self.into_iter());
+
+        msg
     }
 }
 
