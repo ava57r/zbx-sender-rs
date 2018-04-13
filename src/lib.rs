@@ -1,3 +1,9 @@
+//! The library implementation Zabbix sender protocol
+//! more details:
+//! [Zabbix Documentation - 4 Trapper items](https://www.zabbix.com/documentation/3.0/manual/appendix/items/trapper).
+//! [Docs/protocols/zabbix sender/2.0](https://www.zabbix.org/wiki/Docs/protocols/zabbix_sender/2.0).
+//!
+
 #[macro_use]
 extern crate serde_derive;
 extern crate byteorder;
@@ -18,16 +24,19 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 const ZBX_HDR: &'static [u8; 5] = b"ZBXD\x01";
 const ZBX_HDR_SIZE: usize = 13;
 
+/// implementation Zabbix sender protocol.
 pub struct Sender {
     server: String,
     port: u16,
 }
 
 impl Sender {
+    /// Creates a new instance of the client zabbix.
     pub fn new(server: String, port: u16) -> Sender {
         Sender { server, port }
     }
 
+    /// Sends data to the server according to Protocol rules
     pub fn send<T>(&self, msg: T) -> Result<Response>
     where
         T: ToMessage,
@@ -66,6 +75,7 @@ impl Sender {
     }
 }
 
+/// Data item sent to the server.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SendValue {
     host: String,
@@ -84,6 +94,7 @@ impl<'a> From<(&'a str, &'a str, &'a str)> for SendValue {
     }
 }
 
+/// The message that is sent to the Zabbix server.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message {
     request: &'static str,
@@ -91,8 +102,10 @@ pub struct Message {
 }
 
 impl Message {
+    /// Constant request header to the server.
     const REQUEST: &'static str = "sender data";
 
+    /// Creating a new instance of the Message structure from SendValue.
     pub fn new(value: SendValue) -> Message {
         Message {
             request: Message::REQUEST,
@@ -100,6 +113,7 @@ impl Message {
         }
     }
 
+    /// Adds an entry to send a composed message.
     pub fn add(&mut self, value: SendValue) {
         self.data.push(value)
     }
@@ -114,6 +128,7 @@ impl Default for Message {
     }
 }
 
+/// Contract for types that provide the ability to cast to a `Message` type.
 pub trait ToMessage {
     fn to_message(self) -> Message;
 }
@@ -145,6 +160,7 @@ impl ToMessage for Vec<SendValue> {
     }
 }
 
+/// Structure of Zabbix server's response
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Response {
     response: String,

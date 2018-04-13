@@ -1,11 +1,12 @@
 //! Error and Result module
 
-use failure::{self, Fail};
+use failure;
 use serde_json;
 use std::{io, result};
 
 pub type Result<T> = result::Result<T, Error>;
 
+// General error the crate
 #[derive(Fail, Debug)]
 pub enum Error {
     #[fail(display = "Invalid header protocol")]
