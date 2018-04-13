@@ -53,13 +53,13 @@ impl Sender {
 
         let mut rdr = io::Cursor::new(zbx_hdr);
         rdr.set_position(5);
-        let data_length = rdr.read_u32::<LittleEndian>()?;
+        let data_length = rdr.read_u64::<LittleEndian>()?;
         if data_length == 0 {
             return Err(error::Error::InvalidHeader);
         }
 
         let mut read_data = vec![];
-        stream.read_to_end(&mut read_data)?;
+        stream.take(data_length).read_to_end(&mut read_data)?;
         let response: Response = serde_json::from_slice(&read_data)?;
 
         Ok(response)
@@ -149,11 +149,4 @@ impl ToMessage for Vec<SendValue> {
 pub struct Response {
     response: String,
     info: String,
-}
-
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
 }
