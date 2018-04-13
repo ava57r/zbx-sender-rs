@@ -166,3 +166,10 @@ pub struct Response {
     response: String,
     info: String,
 }
+
+impl Response {
+    /// Verifies successful if there was a request
+    pub fn success(&self) -> bool {
+        self.response == "success"
+    }
+}
