@@ -1,4 +1,6 @@
-# zbx-sender-rs
+# zbx-sender
+
+[![](https://img.shields.io/crates/v/zbx_sender.svg)](https://crates.io/crates/zbx_sender)
 
 ## Synopsis
 
