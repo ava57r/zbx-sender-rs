@@ -168,8 +168,10 @@ pub struct Response {
 }
 
 impl Response {
-    /// Verifies successful if there was a request
-    pub fn success(&self) -> bool {
+    /// Verifies if the date successful send
+    pub fn is_sent(&self) -> bool {
         self.response == "success"
     }
+    /// Verifies if the request is successful processed
+    pub fn is_processed(&self) -> bool { self.info.contains("processed: 1") }
 }
