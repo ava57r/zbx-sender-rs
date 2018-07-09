@@ -1,7 +1,7 @@
 extern crate zbx_sender;
 
-use zbx_sender::{Response, Result, Sender};
 use std::env;
+use zbx_sender::{Response, Result, Sender};
 
 fn send_one_value(command: &str) -> Result<Response> {
     let sender = Sender::new(command.to_owned(), 10051);

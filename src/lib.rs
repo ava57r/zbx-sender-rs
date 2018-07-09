@@ -7,8 +7,8 @@
 #[macro_use]
 extern crate serde_derive;
 extern crate byteorder;
-extern crate serde_json;
 extern crate regex;
+extern crate serde_json;
 
 #[macro_use]
 extern crate failure;
@@ -17,10 +17,10 @@ mod error;
 
 pub use error::Result;
 
-use std::io::prelude::*;
-use std::io;
-use std::net::TcpStream;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::io;
+use std::io::prelude::*;
+use std::net::TcpStream;
 
 const ZBX_HDR: &'static [u8; 5] = b"ZBXD\x01";
 const ZBX_HDR_SIZE: usize = 13;
@@ -178,7 +178,7 @@ impl Response {
     pub fn processed_cnt(&self) -> i32 {
         if let Some(result) = self.get_value_from_info("processed") {
             if let Ok(int_value) = result.parse::<i32>() {
-                return int_value
+                return int_value;
             }
         }
         -1 //Return a invalid number
@@ -188,7 +188,7 @@ impl Response {
     pub fn failed_cnt(&self) -> i32 {
         if let Some(result) = self.get_value_from_info("failed") {
             if let Ok(int_value) = result.parse::<i32>() {
-                return int_value
+                return int_value;
             }
         }
         -1 //Return a invalid number
@@ -198,7 +198,7 @@ impl Response {
     pub fn total_cnt(&self) -> i32 {
         if let Some(result) = self.get_value_from_info("total") {
             if let Ok(int_value) = result.parse::<i32>() {
-                return int_value
+                return int_value;
             }
         }
         -1 //Return a invalid number
@@ -208,19 +208,17 @@ impl Response {
     pub fn seconds_spent(&self) -> f32 {
         if let Some(result) = self.get_value_from_info("seconds_spent") {
             if let Ok(float_value) = result.parse::<f32>() {
-                return float_value
+                return float_value;
             }
         }
         -1.0 //Return a invalid number
     }
 
     fn get_value_from_info(&self, name: &str) -> Option<String> {
-
         let reg = regex::Regex::new(r"processed: (?P<processed>\d+); failed: (?P<failed>\d+); total: (?P<total>\d+); seconds spent: (?P<seconds_spent>\d.\d+)").unwrap();
         match reg.captures(&self.info) {
             Some(x) => Some(x[name].to_string()),
             None => None,
         }
-
     }
 }
