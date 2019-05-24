@@ -8,9 +8,10 @@ fn send(command: &str) -> Result<Response> {
     let collection: Vec<SendValue> = [
         ("host1", "key1", "value").into(),
         ("host1", "key1", "value2").into(),
-    ].iter()
-        .cloned()
-        .collect();
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     sender.send(collection)
 }
@@ -29,10 +30,10 @@ fn main() {
             println!("{:?}", response);
             println!(
                 "processed: {}; failed: {}; total: {}; seconds spent: {}",
-                response.processed_cnt(),
-                response.failed_cnt(),
-                response.total_cnt(),
-                response.seconds_spent()
+                response.processed_cnt().unwrap(),
+                response.failed_cnt().unwrap(),
+                response.total_cnt().unwrap(),
+                response.seconds_spent().unwrap()
             );
         }
         Err(e) => println!("Error {}", e),

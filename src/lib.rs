@@ -4,25 +4,25 @@
 //! [Docs/protocols/zabbix sender/2.0](https://www.zabbix.org/wiki/Docs/protocols/zabbix_sender/2.0).
 //!
 
+use byteorder;
+use regex;
+use serde::{Deserialize, Serialize};
+use serde_json;
 #[macro_use]
-extern crate serde_derive;
-extern crate byteorder;
-extern crate regex;
-extern crate serde_json;
-
-#[macro_use]
-extern crate failure;
+extern crate lazy_static;
+use failure;
 
 mod error;
 
-pub use error::Result;
+pub use crate::error::Result;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io;
 use std::io::prelude::*;
 use std::net::TcpStream;
 
-const ZBX_HDR: &'static [u8; 5] = b"ZBXD\x01";
+const ZBX_HEADER: usize = 5;
+const ZBX_HDR: &'static [u8; ZBX_HEADER] = b"ZBXD\x01";
 const ZBX_HDR_SIZE: usize = 13;
 
 /// implementation Zabbix sender protocol.
@@ -57,18 +57,18 @@ impl Sender {
 
         let mut zbx_hdr = [0; ZBX_HDR_SIZE];
         stream.read(&mut zbx_hdr)?;
-        if ZBX_HDR != &zbx_hdr[..5] {
+        if ZBX_HDR != &zbx_hdr[..ZBX_HEADER] {
             return Err(error::Error::InvalidHeader);
         }
 
         let mut rdr = io::Cursor::new(zbx_hdr);
-        rdr.set_position(5);
+        rdr.set_position(ZBX_HEADER as u64);
         let data_length = rdr.read_u64::<LittleEndian>()?;
         if data_length == 0 {
             return Err(error::Error::InvalidHeader);
         }
 
-        let mut read_data = vec![];
+        let mut read_data = Vec::with_capacity(data_length as usize);
         stream.take(data_length).read_to_end(&mut read_data)?;
         let response: Response = serde_json::from_slice(&read_data)?;
 
@@ -175,48 +175,34 @@ impl Response {
     }
 
     /// return the number of successful processed commands
-    pub fn processed_cnt(&self) -> i32 {
-        if let Some(result) = self.get_value_from_info("processed") {
-            if let Ok(int_value) = result.parse::<i32>() {
-                return int_value;
-            }
-        }
-        -1 //Return a invalid number
+    pub fn processed_cnt(&self) -> Option<i32> {
+        self.get_value_from_info("processed")
+            .and_then(|result| result.parse::<i32>().ok())
     }
 
     /// return the number of failed commands
-    pub fn failed_cnt(&self) -> i32 {
-        if let Some(result) = self.get_value_from_info("failed") {
-            if let Ok(int_value) = result.parse::<i32>() {
-                return int_value;
-            }
-        }
-        -1 //Return a invalid number
+    pub fn failed_cnt(&self) -> Option<i32> {
+        self.get_value_from_info("failed")
+            .and_then(|result| result.parse::<i32>().ok())
     }
 
     /// return the number total number of commands send
-    pub fn total_cnt(&self) -> i32 {
-        if let Some(result) = self.get_value_from_info("total") {
-            if let Ok(int_value) = result.parse::<i32>() {
-                return int_value;
-            }
-        }
-        -1 //Return a invalid number
+    pub fn total_cnt(&self) -> Option<i32> {
+        self.get_value_from_info("total")
+            .and_then(|result| result.parse::<i32>().ok())
     }
 
     /// return the time spent to send the command
-    pub fn seconds_spent(&self) -> f32 {
-        if let Some(result) = self.get_value_from_info("seconds_spent") {
-            if let Ok(float_value) = result.parse::<f32>() {
-                return float_value;
-            }
-        }
-        -1.0 //Return a invalid number
+    pub fn seconds_spent(&self) -> Option<i32> {
+        self.get_value_from_info("seconds_spent")
+            .and_then(|result| result.parse::<i32>().ok())
     }
 
     fn get_value_from_info(&self, name: &str) -> Option<String> {
-        let reg = regex::Regex::new(r"processed: (?P<processed>\d+); failed: (?P<failed>\d+); total: (?P<total>\d+); seconds spent: (?P<seconds_spent>\d.\d+)").unwrap();
-        match reg.captures(&self.info) {
+        lazy_static! {
+            static ref RE: regex::Regex = regex::Regex::new(r"processed: (?P<processed>\d+); failed: (?P<failed>\d+); total: (?P<total>\d+); seconds spent: (?P<seconds_spent>\d.\d+)").unwrap();
+        }
+        match RE.captures(&self.info) {
             Some(x) => Some(x[name].to_string()),
             None => None,
         }
