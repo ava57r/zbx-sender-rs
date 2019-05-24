@@ -1,6 +1,6 @@
 [package]
 name = "zbx_sender"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Alexander Andreev <andreevlex.as@gmail.com>"]
 description = "Implementation of Zabbix Sender Client."
 homepage = "https://github.com/andreevlex/zbx-sender-rs"
@@ -9,12 +9,12 @@ documentation = "https://docs.rs/zbx_sender"
 keywords = ["zabbix", "zabbix-sender", "zabbix-protocol"]
 readme = "README.md"
 license = "MIT"
+edition = "2018"
 
 [dependencies]
-serde = "1.0.37"
-serde_json = "1.0.13"
-serde_derive = "1.0.37"
-regex = "1.0.0"
-
-byteorder = "1.2.2"
-failure = "0.1.1"
+serde  = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.39"
+regex = "1.1.6"
+lazy_static = "1.3.0"
+byteorder = "1.3.1"
+failure = "0.1.5"

@@ -1,5 +1,6 @@
 //! Error and Result module
 
+use failure::Fail;
 use serde_json;
 use std::{io, result};
 
