@@ -193,9 +193,9 @@ impl Response {
     }
 
     /// return the time spent to send the command
-    pub fn seconds_spent(&self) -> Option<i32> {
+    pub fn seconds_spent(&self) -> Option<f32> {
         self.get_value_from_info("seconds_spent")
-            .and_then(|result| result.parse::<i32>().ok())
+            .and_then(|result| result.parse::<f32>().ok())
     }
 
     fn get_value_from_info(&self, name: &str) -> Option<String> {
