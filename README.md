@@ -32,7 +32,7 @@ fn main() {
     };
 
     match send_one_value(&command) {
-        Ok(response) => println!("{:?}", response),
+        Ok(response) => println!("{:?} is success {} ", response, response.success()),
         Err(e) => println!("Error {}", e),
     }
 }
