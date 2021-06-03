@@ -7,8 +7,8 @@
 Modern Rust implementation of Zabbix Sender Client.
 Working with Zabbix 2.0.8 and 2.1.7+ versions.
 
-
 ## Code Example
+
 Easy to use:
 
 ```rust
