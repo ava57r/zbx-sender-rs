@@ -4,13 +4,9 @@
 //! [Docs/protocols/zabbix sender/2.0](https://www.zabbix.org/wiki/Docs/protocols/zabbix_sender/2.0).
 //!
 
-use byteorder;
-use regex;
 use serde::{Deserialize, Serialize};
-use serde_json;
 #[macro_use]
 extern crate lazy_static;
-use failure;
 
 mod error;
 
@@ -22,7 +18,7 @@ use std::io::prelude::*;
 use std::net::TcpStream;
 
 const ZBX_HEADER: usize = 5;
-const ZBX_HDR: &'static [u8; ZBX_HEADER] = b"ZBXD\x01";
+const ZBX_HDR: &[u8; ZBX_HEADER] = b"ZBXD\x01";
 const ZBX_HDR_SIZE: usize = 13;
 
 /// implementation Zabbix sender protocol.
@@ -202,9 +198,9 @@ impl Response {
         lazy_static! {
             static ref RE: regex::Regex = regex::Regex::new(r"processed: (?P<processed>\d+); failed: (?P<failed>\d+); total: (?P<total>\d+); seconds spent: (?P<seconds_spent>\d.\d+)").unwrap();
         }
-        match RE.captures(&self.info) {
-            Some(x) => Some(x[name].to_string()),
-            None => None,
-        }
+        // This is not public API, so the following should panic
+        // if an invalid regex capture is requested.
+        RE.captures(&self.info)
+            .map(|x| x[name].to_string())
     }
 }
