@@ -10,6 +10,8 @@
 use serde::{Deserialize, Serialize};
 #[macro_use]
 extern crate lazy_static;
+#[cfg(feature = "tracing")]
+use tracing::{debug, trace};
 
 mod error;
 
@@ -52,7 +54,17 @@ impl Sender {
         let send_data = Self::encode_request(&msg)?;
 
         let mut stream = TcpStream::connect((self.server.as_str(), self.port))?;
+        #[cfg(feature = "tracing")]
+        {
+            debug!(?stream, "connected to Zabbix");
+            trace!(data = ?send_data, "request bytes");
+        }
         stream.write_all(&send_data)?;
+        #[cfg(feature = "tracing")]
+        debug!(
+            message = serde_json::to_string(&msg)?.as_str(),
+            "sent trap to Zabbix"
+        );
 
         let mut zbx_hdr = [0; ZBX_HDR_SIZE];
         stream.read_exact(&mut zbx_hdr)?;
@@ -66,10 +78,17 @@ impl Sender {
         if data_length == 0 {
             return Err(Error::InvalidHeader);
         }
+        #[cfg(feature = "tracing")]
+        trace!(header = ?zbx_hdr, data_length, "got valid response header");
 
         let mut read_data = Vec::with_capacity(data_length as usize);
         stream.take(data_length).read_to_end(&mut read_data)?;
+        #[cfg(feature = "tracing")]
+        trace!(data = ?read_data, "read response bytes");
+
         let response: Response = serde_json::from_slice(&read_data)?;
+        #[cfg(feature = "tracing")]
+        debug!(?response, "decoded valid response");
 
         Ok(response)
     }
@@ -87,7 +106,17 @@ impl Sender {
         let send_data = Self::encode_request(&msg)?;
 
         let mut stream = tokio::net::TcpStream::connect((self.server.as_str(), self.port)).await?;
+        #[cfg(feature = "tracing")]
+        {
+            debug!(?stream, "connected to Zabbix");
+            trace!(data = ?send_data, "request bytes");
+        }
         stream.write_all(&send_data).await?;
+        #[cfg(feature = "tracing")]
+        debug!(
+            message = serde_json::to_string(&msg)?.as_str(),
+            "sent trap to Zabbix"
+        );
 
         let mut zbx_hdr = [0; ZBX_HDR_SIZE];
         stream.read_exact(&mut zbx_hdr).await?;
@@ -101,10 +130,17 @@ impl Sender {
         if data_length == 0 {
             return Err(Error::InvalidHeader);
         }
+        #[cfg(feature = "tracing")]
+        trace!(header = ?zbx_hdr, data_length, "got valid response header");
 
         let mut read_data = Vec::with_capacity(data_length as usize);
         stream.take(data_length).read_to_end(&mut read_data).await?;
+        #[cfg(feature = "tracing")]
+        trace!(data = ?read_data, "read response bytes");
+
         let response: Response = serde_json::from_slice(&read_data)?;
+        #[cfg(feature = "tracing")]
+        debug!(?response, "decoded valid response");
 
         Ok(response)
     }
