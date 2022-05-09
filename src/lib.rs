@@ -10,7 +10,7 @@ extern crate lazy_static;
 
 mod error;
 
-pub use crate::error::Result;
+pub use crate::error::{Error, Result};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io;
@@ -54,14 +54,14 @@ impl Sender {
         let mut zbx_hdr = [0; ZBX_HDR_SIZE];
         stream.read(&mut zbx_hdr)?;
         if ZBX_HDR != &zbx_hdr[..ZBX_HEADER] {
-            return Err(error::Error::InvalidHeader);
+            return Err(Error::InvalidHeader);
         }
 
         let mut rdr = io::Cursor::new(zbx_hdr);
         rdr.set_position(ZBX_HEADER as u64);
         let data_length = rdr.read_u64::<LittleEndian>()?;
         if data_length == 0 {
-            return Err(error::Error::InvalidHeader);
+            return Err(Error::InvalidHeader);
         }
 
         let mut read_data = Vec::with_capacity(data_length as usize);
