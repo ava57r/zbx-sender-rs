@@ -14,9 +14,24 @@ extern crate lazy_static;
 use tracing::{debug, trace};
 
 mod error;
+#[cfg(feature = "tls")]
+pub mod tls;
+#[cfg(feature = "tls")]
+use {std::sync::Arc, tls::ZabbixTlsConfig};
+
+trait Stream: std::io::Read + std::io::Write {}
+
+impl<T> Stream for T where T: std::io::Read + std::io::Write {}
+
+#[cfg(feature = "async_tls")]
+trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin {}
+
+#[cfg(feature = "async_tls")]
+impl<T> AsyncStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin {}
 
 pub use crate::error::{Error, Result};
 
+use std::convert::TryInto;
 use std::io;
 use std::io::prelude::*;
 use std::net::TcpStream;
@@ -29,12 +44,37 @@ const ZBX_HDR_SIZE: usize = 13;
 pub struct Sender {
     server: String,
     port: u16,
+    #[cfg(feature = "tls")]
+    tls: Option<Arc<rustls::ClientConfig>>,
 }
 
 impl Sender {
     /// Creates a new instance of the client zabbix.
-    pub fn new(server: String, port: u16) -> Sender {
-        Sender { server, port }
+    pub fn new(server: String, port: u16) -> Self {
+        Self {
+            server,
+            port,
+            #[cfg(feature = "tls")]
+            tls: None,
+        }
+    }
+
+    #[cfg(feature = "tls")]
+    pub fn with_tls(self, tls: ZabbixTlsConfig) -> Result<Self> {
+        let tls_config = tls.try_into().map_or_else(
+            |e| {
+                if let Error::TlsUnencrypted = e {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            },
+            |c| Ok(Some(Arc::new(c))),
+        )?;
+        Ok(Self {
+            tls: tls_config,
+            ..self
+        })
     }
 
     /// Sends data to the server according to Protocol rules
@@ -53,12 +93,28 @@ impl Sender {
         let msg = msg.to_message();
         let send_data = Self::encode_request(&msg)?;
 
+        #[cfg_attr(feature = "tls", allow(unused_mut))]
         let mut stream = TcpStream::connect((self.server.as_str(), self.port))?;
         #[cfg(feature = "tracing")]
         {
             debug!(?stream, "connected to Zabbix");
             trace!(data = ?send_data, "request bytes");
         }
+        #[cfg(feature = "tls")]
+        let mut stream = {
+            use rustls::ClientConnection;
+
+            if let Some(config) = &self.tls {
+                let server_name = self.server.as_str().try_into().map_err(
+                    |e: rustls::client::InvalidDnsNameError| Error::TlsConfigError(e.to_string()),
+                )?;
+                let conn = ClientConnection::new(Arc::clone(config), server_name)
+                    .map_err(|e| Error::TlsConfigError(e.to_string()))?;
+                Box::new(rustls::StreamOwned::new(conn, stream)) as Box<dyn Stream>
+            } else {
+                Box::new(stream) as Box<dyn Stream>
+            }
+        };
         stream.write_all(&send_data)?;
         #[cfg(feature = "tracing")]
         debug!(
@@ -105,12 +161,27 @@ impl Sender {
         let msg = msg.to_message();
         let send_data = Self::encode_request(&msg)?;
 
+        #[cfg_attr(feature = "tls", allow(unused_mut))]
         let mut stream = tokio::net::TcpStream::connect((self.server.as_str(), self.port)).await?;
         #[cfg(feature = "tracing")]
         {
             debug!(?stream, "connected to Zabbix");
             trace!(data = ?send_data, "request bytes");
         }
+        #[cfg(all(feature = "tls", not(feature = "async_tls")))]
+        compile_error!("To enable the features `tls` and `async_tokio` together, you must also enable the `async_tls` feature");
+
+        #[cfg(all(feature = "tls", feature = "async_tls"))]
+        let mut stream = if let Some(config) = &self.tls {
+            let server_name = self.server.as_str().try_into().map_err(
+                |e: rustls::client::InvalidDnsNameError| Error::TlsConfigError(e.to_string()),
+            )?;
+            let conn = tokio_rustls::TlsConnector::from(Arc::clone(config));
+            Box::new(conn.connect(server_name, stream).await?) as Box<dyn AsyncStream>
+        } else {
+            Box::new(stream)
+        };
+
         stream.write_all(&send_data).await?;
         #[cfg(feature = "tracing")]
         debug!(

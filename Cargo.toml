@@ -13,6 +13,8 @@ edition = "2021"
 
 [features]
 async_tokio = ["tokio"]
+async_tls = ["tokio-rustls"]
+tls = ["rustls", "rustls-pemfile", "rustls-native-certs", "x509-certificate", "derive_builder"]
 
 [dependencies]
 serde  = { version = "1", features = ["derive"] }
@@ -23,3 +25,21 @@ byteorder = "1.4"
 thiserror = "1.0.31"
 tokio = { version = "1.18", optional = true, features = ["net", "io-util"] }
 tracing = { version = "0.1", optional = true, features = ["log", "std"], default-features = false }
+clap = { version = "3.1.17", optional = true, features = ["std", "derive"], default-features = false }
+derive_builder = { version = "0.11.2", optional = true }
+rustls = { version = "0.20.4", features = ["dangerous_configuration"], optional = true }
+rustls-pemfile = { version = "1.0.0", optional = true }
+rustls-native-certs = { version = "0.6.2", optional = true }
+x509-certificate = { version = "0.13.0", optional = true }
+tokio-rustls = { version = "0.23.4", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.18.1", features = ["net", "io-util", "rt", "macros"] }
+
+[[example]]
+name = "tls_sender"
+required-features = ["tls", "clap"]
+
+[[example]]
+name = "tls_sender_async"
+required-features = ["tls", "clap", "async_tokio", "async_tls"]
