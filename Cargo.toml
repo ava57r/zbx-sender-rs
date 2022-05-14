@@ -1,6 +1,6 @@
 [package]
 name = "zbx_sender"
-version = "0.2.3"
+version = "0.3.0-alpha"
 authors = ["Alexander Andreev <andreevlex.as@gmail.com>"]
 description = "Implementation of Zabbix Sender Client."
 homepage = "https://github.com/ava57r/zbx-sender-rs"
@@ -21,4 +21,4 @@ regex = "1.5"
 lazy_static = "1.4"
 byteorder = "1.4"
 thiserror = "1.0.31"
-tokio = { version = "1.18.1", optional = true, features = ["net", "io-util"] }
+tokio = { version = "1.18", optional = true, features = ["net", "io-util"] }

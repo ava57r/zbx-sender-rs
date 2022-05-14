@@ -48,7 +48,7 @@ impl Sender {
         let msg = msg.to_message();
         let send_data = Self::encode_request(&msg)?;
 
-        let mut stream = TcpStream::connect((self.server.as_str(), self.port,))?;
+        let mut stream = TcpStream::connect((self.server.as_str(), self.port))?;
         stream.write_all(&send_data)?;
 
         let mut zbx_hdr = [0; ZBX_HDR_SIZE];
@@ -78,12 +78,12 @@ impl Sender {
     {
         // This use statement must be scoped to the function body.
         // See explanation in comment at `fn send()`.
-        use tokio::io::{AsyncWriteExt, AsyncReadExt};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let msg = msg.to_message();
         let send_data = Self::encode_request(&msg)?;
 
-        let mut stream = tokio::net::TcpStream::connect((self.server.as_str(), self.port,)).await?;
+        let mut stream = tokio::net::TcpStream::connect((self.server.as_str(), self.port)).await?;
         stream.write_all(&send_data).await?;
 
         let mut zbx_hdr = [0; ZBX_HDR_SIZE];
@@ -252,7 +252,6 @@ impl Response {
         }
         // This is not public API, so the following should panic
         // if an invalid regex capture is requested.
-        RE.captures(&self.info)
-            .map(|x| x[name].to_string())
+        RE.captures(&self.info).map(|x| x[name].to_string())
     }
 }
