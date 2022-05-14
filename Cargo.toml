@@ -9,7 +9,7 @@ documentation = "https://docs.rs/zbx_sender"
 keywords = ["zabbix", "zabbix-sender", "zabbix-protocol"]
 readme = "README.md"
 license = "MIT"
-edition = "2018"
+edition = "2021"
 
 [features]
 async_tokio = ["tokio"]
