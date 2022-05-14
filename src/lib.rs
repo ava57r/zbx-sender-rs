@@ -4,25 +4,20 @@
 //! [Docs/protocols/zabbix sender/2.0](https://www.zabbix.org/wiki/Docs/protocols/zabbix_sender/2.0).
 //!
 
-use byteorder;
-use regex;
 use serde::{Deserialize, Serialize};
-use serde_json;
 #[macro_use]
 extern crate lazy_static;
-use failure;
 
 mod error;
 
-pub use crate::error::Result;
+pub use crate::error::{Error, Result};
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io;
 use std::io::prelude::*;
 use std::net::TcpStream;
 
 const ZBX_HEADER: usize = 5;
-const ZBX_HDR: &'static [u8; ZBX_HEADER] = b"ZBXD\x01";
+const ZBX_HDR: &[u8; ZBX_HEADER] = b"ZBXD\x01";
 const ZBX_HDR_SIZE: usize = 13;
 
 /// implementation Zabbix sender protocol.
@@ -42,30 +37,31 @@ impl Sender {
     where
         T: ToMessage,
     {
-        let byte_msg = serde_json::to_string(&msg.to_message())?;
-        let data = byte_msg.as_bytes();
+        // This use statement must be scoped to the function body
+        // or the methods provided by `byteorder` (e.g. `read_u64`)
+        // conflict with the same methods provided by
+        // `tokio::io::AsyncReadExt` when the `async_tokio` feature
+        // is enabled, because `AsyncReadExt` is implemented for
+        // `AsyncRead`, which is implemented for `std::io::Cursor<T>`.
+        use byteorder::{LittleEndian, ReadBytesExt};
 
-        let mut send_data: Vec<u8> = Vec::with_capacity(ZBX_HDR_SIZE + data.len());
-        send_data.extend(ZBX_HDR);
-        send_data.write_u32::<LittleEndian>(data.len() as u32)?;
-        send_data.extend(&[0, 0, 0, 0]);
-        send_data.extend(data.iter());
+        let msg = msg.to_message();
+        let send_data = Self::encode_request(&msg)?;
 
-        let addr = format!("{0}:{1}", self.server, self.port);
-        let mut stream = TcpStream::connect(addr)?;
-        stream.write(&send_data)?;
+        let mut stream = TcpStream::connect((self.server.as_str(), self.port,))?;
+        stream.write_all(&send_data)?;
 
         let mut zbx_hdr = [0; ZBX_HDR_SIZE];
-        stream.read(&mut zbx_hdr)?;
+        stream.read_exact(&mut zbx_hdr)?;
         if ZBX_HDR != &zbx_hdr[..ZBX_HEADER] {
-            return Err(error::Error::InvalidHeader);
+            return Err(Error::InvalidHeader);
         }
 
         let mut rdr = io::Cursor::new(zbx_hdr);
         rdr.set_position(ZBX_HEADER as u64);
         let data_length = rdr.read_u64::<LittleEndian>()?;
         if data_length == 0 {
-            return Err(error::Error::InvalidHeader);
+            return Err(Error::InvalidHeader);
         }
 
         let mut read_data = Vec::with_capacity(data_length as usize);
@@ -73,6 +69,58 @@ impl Sender {
         let response: Response = serde_json::from_slice(&read_data)?;
 
         Ok(response)
+    }
+
+    #[cfg(feature = "async_tokio")]
+    pub async fn send_async<T>(&self, msg: T) -> Result<Response>
+    where
+        T: ToMessage,
+    {
+        // This use statement must be scoped to the function body.
+        // See explanation in comment at `fn send()`.
+        use tokio::io::{AsyncWriteExt, AsyncReadExt};
+
+        let msg = msg.to_message();
+        let send_data = Self::encode_request(&msg)?;
+
+        let mut stream = tokio::net::TcpStream::connect((self.server.as_str(), self.port,)).await?;
+        stream.write_all(&send_data).await?;
+
+        let mut zbx_hdr = [0; ZBX_HDR_SIZE];
+        stream.read_exact(&mut zbx_hdr).await?;
+        if ZBX_HDR != &zbx_hdr[..ZBX_HEADER] {
+            return Err(Error::InvalidHeader);
+        }
+
+        let mut rdr = io::Cursor::new(zbx_hdr);
+        rdr.set_position(ZBX_HEADER as u64);
+        let data_length = rdr.read_u64_le().await?;
+        if data_length == 0 {
+            return Err(Error::InvalidHeader);
+        }
+
+        let mut read_data = Vec::with_capacity(data_length as usize);
+        stream.take(data_length).read_to_end(&mut read_data).await?;
+        let response: Response = serde_json::from_slice(&read_data)?;
+
+        Ok(response)
+    }
+
+    fn encode_request(msg: &Message) -> Result<Vec<u8>> {
+        // This use statement must be scoped to the function body.
+        // See explanation in comment at `fn send()`.
+        use byteorder::{LittleEndian, WriteBytesExt};
+
+        let msg_json = serde_json::to_string(msg)?;
+        let data = msg_json.as_bytes();
+
+        let mut send_data: Vec<u8> = Vec::with_capacity(ZBX_HDR_SIZE + data.len());
+        send_data.extend(ZBX_HDR);
+        send_data.write_u32::<LittleEndian>(data.len() as u32)?;
+        send_data.extend(&[0, 0, 0, 0]);
+        send_data.extend(data.iter());
+
+        Ok(send_data)
     }
 }
 
@@ -202,9 +250,9 @@ impl Response {
         lazy_static! {
             static ref RE: regex::Regex = regex::Regex::new(r"processed: (?P<processed>\d+); failed: (?P<failed>\d+); total: (?P<total>\d+); seconds spent: (?P<seconds_spent>\d.\d+)").unwrap();
         }
-        match RE.captures(&self.info) {
-            Some(x) => Some(x[name].to_string()),
-            None => None,
-        }
+        // This is not public API, so the following should panic
+        // if an invalid regex capture is requested.
+        RE.captures(&self.info)
+            .map(|x| x[name].to_string())
     }
 }
