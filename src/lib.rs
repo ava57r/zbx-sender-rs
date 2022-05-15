@@ -3,6 +3,9 @@
 //! [Zabbix Documentation - 4 Trapper items](https://www.zabbix.com/documentation/3.0/manual/appendix/items/trapper).
 //! [Docs/protocols/zabbix sender/2.0](https://www.zabbix.org/wiki/Docs/protocols/zabbix_sender/2.0).
 //!
+//! ## Package feature
+//!
+//! `async_tokio` - enables tokio async requests.
 
 use serde::{Deserialize, Serialize};
 #[macro_use]
