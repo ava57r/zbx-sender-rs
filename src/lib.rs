@@ -14,23 +14,24 @@ extern crate lazy_static;
 use tracing::{debug, trace};
 
 mod error;
-#[cfg(feature = "tls")]
+#[cfg(feature = "_tls_common")]
 pub mod tls;
-#[cfg(feature = "tls")]
-use {std::sync::Arc, tls::ZabbixTlsConfig};
+#[cfg(feature = "_tls_common")]
+use tls::ZabbixTlsConfig;
 
 trait Stream: std::io::Read + std::io::Write {}
 
-impl<T> Stream for T where T: std::io::Read + std::io::Write {}
+impl<T: std::io::Read + std::io::Write> Stream for T {}
 
-#[cfg(feature = "async_tls")]
+#[cfg(all(feature = "_tls_common", feature = "async_tokio"))]
 trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin {}
 
-#[cfg(feature = "async_tls")]
-impl<T> AsyncStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin {}
+#[cfg(all(feature = "_tls_common", feature = "async_tokio"))]
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin> AsyncStream for T {}
 
 pub use crate::error::{Error, Result};
 
+#[cfg(feature = "_tls_common")]
 use std::convert::TryInto;
 use std::io;
 use std::io::prelude::*;
@@ -44,8 +45,8 @@ const ZBX_HDR_SIZE: usize = 13;
 pub struct Sender {
     server: String,
     port: u16,
-    #[cfg(feature = "tls")]
-    tls: Option<Arc<rustls::ClientConfig>>,
+    #[cfg(feature = "_tls_common")]
+    tls: Option<tls::StreamAdapter>,
 }
 
 impl Sender {
@@ -54,22 +55,25 @@ impl Sender {
         Self {
             server,
             port,
-            #[cfg(feature = "tls")]
+            #[cfg(feature = "_tls_common")]
             tls: None,
         }
     }
 
-    #[cfg(feature = "tls")]
+    #[cfg(feature = "_tls_common")]
+    /// Configure the client to connect via TLS
     pub fn with_tls(self, tls: ZabbixTlsConfig) -> Result<Self> {
+        use crate::tls::TlsError::Unencrypted;
+
         let tls_config = tls.try_into().map_or_else(
             |e| {
-                if let Error::TlsUnencrypted = e {
+                if let Error::TlsError(Unencrypted) = e {
                     Ok(None)
                 } else {
                     Err(e)
                 }
             },
-            |c| Ok(Some(Arc::new(c))),
+            |c| Ok(Some(c)),
         )?;
         Ok(Self {
             tls: tls_config,
@@ -93,28 +97,20 @@ impl Sender {
         let msg = msg.to_message();
         let send_data = Self::encode_request(&msg)?;
 
-        #[cfg_attr(feature = "tls", allow(unused_mut))]
+        #[cfg_attr(feature = "_tls_common", allow(unused_mut))]
         let mut stream = TcpStream::connect((self.server.as_str(), self.port))?;
         #[cfg(feature = "tracing")]
         {
             debug!(?stream, "connected to Zabbix");
             trace!(data = ?send_data, "request bytes");
         }
-        #[cfg(feature = "tls")]
-        let mut stream = {
-            use rustls::ClientConnection;
-
-            if let Some(config) = &self.tls {
-                let server_name = self.server.as_str().try_into().map_err(
-                    |e: rustls::client::InvalidDnsNameError| Error::TlsConfigError(e.to_string()),
-                )?;
-                let conn = ClientConnection::new(Arc::clone(config), server_name)
-                    .map_err(|e| Error::TlsConfigError(e.to_string()))?;
-                Box::new(rustls::StreamOwned::new(conn, stream)) as Box<dyn Stream>
-            } else {
-                Box::new(stream) as Box<dyn Stream>
-            }
+        #[cfg(feature = "_tls_common")]
+        let mut stream = if let Some(t) = &self.tls {
+            Box::new(t.connect(&self.server, stream)?)
+        } else {
+            Box::new(stream) as Box<dyn Stream>
         };
+
         stream.write_all(&send_data)?;
         #[cfg(feature = "tracing")]
         debug!(
@@ -161,25 +157,19 @@ impl Sender {
         let msg = msg.to_message();
         let send_data = Self::encode_request(&msg)?;
 
-        #[cfg_attr(feature = "tls", allow(unused_mut))]
+        #[cfg_attr(feature = "_tls_common", allow(unused_mut))]
         let mut stream = tokio::net::TcpStream::connect((self.server.as_str(), self.port)).await?;
         #[cfg(feature = "tracing")]
         {
             debug!(?stream, "connected to Zabbix");
             trace!(data = ?send_data, "request bytes");
         }
-        #[cfg(all(feature = "tls", not(feature = "async_tls")))]
-        compile_error!("To enable the features `tls` and `async_tokio` together, you must also enable the `async_tls` feature");
 
-        #[cfg(all(feature = "tls", feature = "async_tls"))]
-        let mut stream = if let Some(config) = &self.tls {
-            let server_name = self.server.as_str().try_into().map_err(
-                |e: rustls::client::InvalidDnsNameError| Error::TlsConfigError(e.to_string()),
-            )?;
-            let conn = tokio_rustls::TlsConnector::from(Arc::clone(config));
-            Box::new(conn.connect(server_name, stream).await?) as Box<dyn AsyncStream>
+        #[cfg(feature = "_tls_common")]
+        let mut stream = if let Some(t) = &self.tls {
+            Box::new(t.connect_async(&self.server, stream).await?)
         } else {
-            Box::new(stream)
+            Box::new(stream) as Box<dyn AsyncStream>
         };
 
         stream.write_all(&send_data).await?;

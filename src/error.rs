@@ -13,8 +13,7 @@ pub enum Error {
     IoError(#[from] io::Error),
     #[error(transparent)]
     JsonError(#[from] serde_json::error::Error),
-    #[error("TLS settings not valid: {0}")]
-    TlsConfigError(String),
-    #[error("tried to encrypt with an \"unencrypted\" TLS config")]
-    TlsUnencrypted,
+    #[cfg(feature = "_tls_common")]
+    #[error(transparent)]
+    TlsError(#[from] crate::tls::TlsError),
 }

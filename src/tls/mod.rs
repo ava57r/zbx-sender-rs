@@ -1,22 +1,32 @@
-use std::{
-    convert::TryFrom,
-    fs::File,
-    io::BufReader,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::path::PathBuf;
 
 use derive_builder::Builder;
+
+macro_rules! unsupported_options {
+    ($obj:expr, $opt:ident)=>{
+        if $obj.$opt.is_some() {
+            return Err(Self::Error::Unsupported(stringify!($opt).into()));
+        }
+    };
+    ($obj:expr, $($opt:ident),+)=>{
+        $(unsupported_options!($obj, $opt));+
+    }
+}
 
 #[cfg(feature = "clap")]
 mod cli;
 #[cfg(feature = "clap")]
 pub use cli::ZabbixTlsCli;
-#[cfg(feature = "tracing")]
-use tracing::warn;
-use x509_certificate::CapturedX509Certificate;
 
-use crate::Error::TlsConfigError;
+#[cfg(feature = "tls_rustls")]
+mod rustls;
+#[cfg(feature = "tls_rustls")]
+pub use self::rustls::{StreamAdapter, TlsError};
+
+#[cfg(feature = "tls_openssl")]
+mod openssl;
+#[cfg(feature = "tls_openssl")]
+pub use self::openssl::{StreamAdapter, TlsError};
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "clap", derive(clap::ArgEnum))]
@@ -160,205 +170,4 @@ impl ZabbixTlsConfig {
             ..ZabbixTlsConfigBuilder::empty()
         }
     }
-}
-
-impl TryFrom<ZabbixTlsConfig> for rustls::ClientConfig {
-    type Error = crate::Error;
-
-    fn try_from(zabbix_config: ZabbixTlsConfig) -> Result<Self, Self::Error> {
-        match zabbix_config.connect {
-            ZabbixTlsConnect::Unencrypted => Err(Self::Error::TlsUnencrypted),
-            ZabbixTlsConnect::Psk => todo!(),
-            ZabbixTlsConnect::Cert => {
-                let root_store = match zabbix_config.ca_file {
-                    None => load_system_roots()?,
-                    Some(path) => load_ca_file(path)?,
-                };
-                let verifier = ZabbixServerCertVerifier::new(
-                    root_store,
-                    zabbix_config.server_cert_subject,
-                    zabbix_config.server_cert_issuer,
-                );
-                let client_key =
-                    load_key_file(zabbix_config.key_file.expect("guaranteed by builder"))?;
-                let client_cert =
-                    load_cert_file(zabbix_config.cert_file.expect("guaranteed by builder"))?;
-                // `with_safe_defaults()` includes a set of cipher suites
-                // that partially overlaps with Zabbix's default cipher suites
-                rustls::ClientConfig::builder()
-                    .with_safe_defaults()
-                    .with_custom_certificate_verifier(Arc::new(verifier))
-                    .with_single_cert(client_cert, client_key)
-                    .map_err(|e| {
-                        TlsConfigError(format!("error loading client certificate or key: {}", e))
-                    })
-            }
-        }
-    }
-}
-
-struct ZabbixServerCertVerifier {
-    inner: rustls::client::WebPkiVerifier,
-    subject: Option<String>,
-    issuer: Option<String>,
-}
-
-impl ZabbixServerCertVerifier {
-    fn new(
-        root_store: rustls::RootCertStore,
-        subject: Option<String>,
-        issuer: Option<String>,
-    ) -> Self {
-        let verifier = rustls::client::WebPkiVerifier::new(root_store, None);
-        Self {
-            inner: verifier,
-            issuer,
-            subject,
-        }
-    }
-}
-
-impl rustls::client::ServerCertVerifier for ZabbixServerCertVerifier {
-    fn verify_server_cert(
-        &self,
-        end_entity: &rustls::Certificate,
-        intermediates: &[rustls::Certificate],
-        server_name: &rustls::ServerName,
-        scts: &mut dyn Iterator<Item = &[u8]>,
-        ocsp_response: &[u8],
-        now: std::time::SystemTime,
-    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
-        use rustls::Error;
-
-        let parsed_cert = if self.subject.is_some() || self.issuer.is_some() {
-            let parsed_cert = CapturedX509Certificate::from_der(end_entity.0.as_slice())
-                .map_err(|e| Error::General(e.to_string()))?;
-            Some(parsed_cert)
-        } else {
-            None
-        };
-
-        self.inner
-            .verify_server_cert(
-                end_entity,
-                intermediates,
-                server_name,
-                scts,
-                ocsp_response,
-                now,
-            )
-            .and_then(|ok| {
-                if let Some(subject) = &self.subject {
-                    let subject_dn = parsed_cert
-                        .as_ref()
-                        .expect("guaranteed by above if conditions")
-                        .subject_name()
-                        .user_friendly_str()
-                        .map_err(|e| Error::InvalidCertificateData(e.to_string()))?;
-                    if &subject_dn != subject {
-                        return Err(Error::InvalidCertificateData(format!(
-                            "Certificate subject `{}` does not match required \
-                                 server_cert_subject from configuration: `{}`",
-                            subject_dn, subject
-                        )));
-                    }
-                }
-                Ok(ok)
-            })
-            .and_then(|ok| {
-                if let Some(issuer) = &self.issuer {
-                    let issuer_dn = parsed_cert
-                        .as_ref()
-                        .expect("guaranteed by above if conditions")
-                        .issuer_name()
-                        .user_friendly_str()
-                        .map_err(|e| Error::InvalidCertificateData(e.to_string()))?;
-                    if &issuer_dn != issuer {
-                        return Err(Error::InvalidCertificateData(format!(
-                            "Certificate issuer `{}` does not match required \
-                                 server_cert_issuer from configuration: `{}`",
-                            issuer_dn, issuer
-                        )));
-                    }
-                }
-                Ok(ok)
-            })
-    }
-}
-
-fn load_cert_file(path: impl AsRef<Path>) -> Result<Vec<rustls::Certificate>, crate::Error> {
-    let path = path.as_ref();
-    let mut rdr = BufReader::new(File::open(&path)?);
-    let chain: Vec<rustls::Certificate> = rustls_pemfile::certs(&mut rdr)?
-        .into_iter()
-        .map(rustls::Certificate)
-        .collect();
-    if chain.is_empty() {
-        Err(TlsConfigError(format!(
-            "no certificates found in {}",
-            path.to_string_lossy()
-        )))
-    } else {
-        Ok(chain)
-    }
-}
-
-fn load_key_file(path: impl AsRef<Path>) -> Result<rustls::PrivateKey, crate::Error> {
-    use rustls_pemfile::Item::*;
-
-    let path = path.as_ref();
-    let mut rdr = BufReader::new(File::open(&path)?);
-    let mut found_key = None;
-    while let Some(item) = rustls_pemfile::read_one(&mut rdr)? {
-        match item {
-            RSAKey(v) | PKCS8Key(v) | ECKey(v) => {
-                if found_key.is_some() {
-                    return Err(TlsConfigError(format!(
-                        "multiple keys found in {}",
-                        path.to_string_lossy()
-                    )));
-                }
-                found_key = Some(rustls::PrivateKey(v));
-            }
-            _ => {
-                #[cfg(feature = "tracing")]
-                warn!("certificate found in {}", path.to_string_lossy())
-            }
-        }
-    }
-    found_key.ok_or_else(|| TlsConfigError(format!("no keys found in {}", path.to_string_lossy())))
-}
-
-fn load_ca_file(path: impl AsRef<Path>) -> Result<rustls::RootCertStore, crate::Error> {
-    let mut roots = rustls::RootCertStore::empty();
-    let mut rdr = BufReader::new(File::open(path.as_ref())?);
-    while let Some(item) = rustls_pemfile::read_one(&mut rdr)? {
-        if let rustls_pemfile::Item::X509Certificate(cert) = item {
-            let cert = rustls::Certificate(cert);
-            roots
-                .add(&cert)
-                .map_err(|e| TlsConfigError(format!("error loading ca_file: {}", e)))?;
-        } else {
-            #[cfg(feature = "tracing")]
-            warn!(
-                "found non-certificate item in {}",
-                path.as_ref().to_string_lossy()
-            );
-        }
-    }
-    Ok(roots)
-}
-
-fn load_system_roots() -> Result<rustls::RootCertStore, crate::Error> {
-    let mut roots = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs()? {
-        let cert = rustls::Certificate(cert.0);
-        roots.add(&cert).map_err(|e| {
-            TlsConfigError(format!(
-                "error loading certificate from system roots: {}",
-                e
-            ))
-        })?;
-    }
-    Ok(roots)
 }

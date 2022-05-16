@@ -13,8 +13,11 @@ edition = "2021"
 
 [features]
 async_tokio = ["tokio"]
-async_tls = ["tokio-rustls"]
-tls = ["rustls", "rustls-pemfile", "rustls-native-certs", "x509-certificate", "derive_builder"]
+_tls_common = ["x509-certificate", "derive_builder"]
+tls_rustls = ["_tls_common", "rustls", "rustls-pemfile", "rustls-native-certs"]
+tls_openssl = ["_tls_common", "openssl", "openssl-errors", "hex"]
+tls_rustls_tokio = ["tokio-rustls"]
+tls_openssl_tokio = ["tokio-openssl"]
 
 [dependencies]
 serde  = { version = "1", features = ["derive"] }
@@ -32,14 +35,18 @@ rustls-pemfile = { version = "1.0.0", optional = true }
 rustls-native-certs = { version = "0.6.2", optional = true }
 x509-certificate = { version = "0.13.0", optional = true }
 tokio-rustls = { version = "0.23.4", optional = true }
+openssl = { version = "0.10.40", optional = true }
+hex = { version = "0.4.3", optional = true }
+openssl-errors = { version = "0.2.0", optional = true }
+tokio-openssl = { version = "0.6.3", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.18.1", features = ["net", "io-util", "rt", "macros"] }
 
 [[example]]
 name = "tls_sender"
-required-features = ["tls", "clap"]
+required-features = ["_tls_common", "clap"]
 
 [[example]]
 name = "tls_sender_async"
-required-features = ["tls", "clap", "async_tokio", "async_tls"]
+required-features = ["_tls_common", "clap", "async_tokio"]
