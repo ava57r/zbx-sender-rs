@@ -14,6 +14,17 @@ use x509_certificate::CapturedX509Certificate;
 
 use super::{TlsConfig, EncryptionType};
 
+macro_rules! unsupported_options {
+    ($obj:expr, $opt:ident)=>{
+        if $obj.$opt.is_some() {
+            return Err(Self::Error::Unsupported(stringify!($opt).into()));
+        }
+    };
+    ($obj:expr, $($opt:ident),+)=>{
+        $(unsupported_options!($obj, $opt));+
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum TlsError {
     #[error(transparent)]
@@ -75,7 +86,7 @@ impl TryFrom<TlsConfig> for rustls::ClientConfig {
     type Error = TlsError;
 
     fn try_from(zabbix_config: TlsConfig) -> Result<Self, Self::Error> {
-        unsupported_options!(zabbix_config, crl_file, psk_identity, psk_file);
+        unsupported_options!(zabbix_config, psk_identity, psk_file);
         match zabbix_config.connect {
             EncryptionType::Unencrypted => Err(Self::Error::Unencrypted),
             EncryptionType::Psk => Err(Self::Error::Unsupported(

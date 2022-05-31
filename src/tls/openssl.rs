@@ -99,7 +99,6 @@ impl TryFrom<TlsConfig> for SslConnector {
     fn try_from(zabbix_config: TlsConfig) -> Result<Self, Self::Error> {
         use EncryptionType::*;
 
-        unsupported_options!(zabbix_config, crl_file);
         if let EncryptionType::Unencrypted = zabbix_config.connect {
             return Err(Self::Error::Unencrypted);
         }

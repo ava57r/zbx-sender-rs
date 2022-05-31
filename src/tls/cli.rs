@@ -38,11 +38,6 @@ pub struct ClapArgs {
     #[clap(long)]
     pub tls_ca_file: Option<PathBuf>,
 
-    /// Full pathname of a file containing revoked certificates
-    /// (default is to use system CRL)
-    #[clap(long)]
-    pub tls_crl_file: Option<PathBuf>,
-
     /// Allowed server certificate issuer
     #[clap(long)]
     pub tls_server_cert_issuer: Option<String>,
@@ -91,7 +86,6 @@ impl TryFrom<ClapArgs> for super::TlsConfig {
             psk_identity: Some(args.tls_psk_identity),
             psk_file: Some(args.tls_psk_file),
             ca_file: Some(args.tls_ca_file),
-            crl_file: Some(args.tls_crl_file),
             server_cert_issuer: Some(args.tls_server_cert_issuer),
             server_cert_subject: Some(args.tls_server_cert_subject),
             cert_file: Some(args.tls_cert_file),

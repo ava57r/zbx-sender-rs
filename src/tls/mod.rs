@@ -14,17 +14,6 @@ use std::path::PathBuf;
 
 use derive_builder::Builder;
 
-macro_rules! unsupported_options {
-    ($obj:expr, $opt:ident)=>{
-        if $obj.$opt.is_some() {
-            return Err(Self::Error::Unsupported(stringify!($opt).into()));
-        }
-    };
-    ($obj:expr, $($opt:ident),+)=>{
-        $(unsupported_options!($obj, $opt));+
-    }
-}
-
 #[cfg(feature = "clap")]
 mod cli;
 #[cfg(feature = "clap")]
@@ -81,11 +70,6 @@ pub struct TlsConfig {
     #[builder(default, setter(strip_option, into))]
     ca_file: Option<PathBuf>,
 
-    /// (**Currently unsupported by both the `openssl` and `rustls` backends**) A file containing
-    /// revoked server certificates to reject connections from
-    #[builder(default, setter(strip_option, into))]
-    crl_file: Option<PathBuf>,
-
     /// An X.509 name that the server certificate's Issuer field must match exactly
     #[builder(default, setter(strip_option, into))]
     server_cert_issuer: Option<String>,
@@ -118,7 +102,6 @@ impl TlsConfigBuilder {
                     self,
                     "connection is unencrypted",
                     ca_file,
-                    crl_file,
                     server_cert_issuer,
                     server_cert_subject,
                     cert_file,
@@ -132,7 +115,6 @@ impl TlsConfigBuilder {
                     self,
                     "connection is encrypted by PSK",
                     ca_file,
-                    crl_file,
                     server_cert_issuer,
                     server_cert_subject,
                     cert_file,
