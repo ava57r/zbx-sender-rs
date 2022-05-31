@@ -95,7 +95,7 @@ impl TryFrom<ClapArgs> for super::TlsConfig {
         // Apply validation logic of builder to generate argument
         // conflicts (e.g. cert arguments when tls_connect=psk)
         builder
-            .build()
+            .fallible_build()
             .map_err(|e| Self::Error::raw(clap::ErrorKind::ArgumentConflict, e))
     }
 }

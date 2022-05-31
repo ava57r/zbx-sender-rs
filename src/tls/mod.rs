@@ -45,7 +45,7 @@ pub enum EncryptionType {
 #[builder(
     custom_constructor,
     create_empty = "empty",
-    build_fn(validate = "Self::validate"),
+    build_fn(private, name = "fallible_build", validate = "Self::validate"),
     pattern = "owned"
 )]
 /// TLS configuration for [Sender](crate::Sender)
@@ -133,6 +133,12 @@ impl TlsConfigBuilder {
         };
         Ok(())
     }
+
+    /// Build a new [`TlsConfig`]
+    pub fn build(self) -> TlsConfig {
+        self.fallible_build()
+            .expect("programmer error: should be guaranteed by builder")
+    }
 }
 
 impl TlsConfig {
@@ -155,7 +161,7 @@ impl TlsConfig {
             key_file: Some(None),
             ..TlsConfigBuilder::empty()
         }
-        .build()
+        .fallible_build()
         .expect("Programmer mistake in fields provided for TlsConfigBuilder in Config::new_psk()")
     }
 
@@ -166,7 +172,7 @@ impl TlsConfig {
     /// * `cert_file` - the full path to a certificate (or certificate chain) in PEM format
     /// * `key_file` - the full path to the certificate's private key in PEM format
     pub fn new_cert(cert_file: impl Into<PathBuf>, key_file: impl Into<PathBuf>) -> Self {
-        Self::cert_builder(cert_file, key_file).build().expect(
+        Self::cert_builder(cert_file, key_file).fallible_build().expect(
             "Programmer mistake in fields provided for TlsConfigBuilder in Config::new_cert()",
         )
     }
