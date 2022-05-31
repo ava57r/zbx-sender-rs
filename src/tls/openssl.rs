@@ -22,7 +22,7 @@ use tokio_openssl::SslStream as AsyncSslStream;
 #[cfg(feature = "tracing")]
 use tracing::error;
 
-use super::{TlsConfig, EncryptionType};
+use super::{EncryptionType, TlsConfig};
 
 #[derive(Error, Debug)]
 pub enum TlsError {

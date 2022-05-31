@@ -23,9 +23,12 @@
 //! - `clap` - Include the struct that implements `clap::Args`, which can be included in downstream
 //!   users of this library to get command line argument parsing that mirrors Zabbix native TLS
 //!   configuration.
-#![cfg_attr(all(feature = "_tls_common", feature = "clap"), doc = r##"
+#![cfg_attr(
+    all(feature = "_tls_common", feature = "clap"),
+    doc = r##"
       See details in the documentation for [tls::ClapArgs].
-"##)]
+"##
+)]
 
 use serde::{Deserialize, Serialize};
 #[macro_use]

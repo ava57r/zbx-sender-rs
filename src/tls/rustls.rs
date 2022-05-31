@@ -12,7 +12,7 @@ use thiserror::Error;
 use tracing::warn;
 use x509_certificate::CapturedX509Certificate;
 
-use super::{TlsConfig, EncryptionType};
+use super::{EncryptionType, TlsConfig};
 
 macro_rules! unsupported_options {
     ($obj:expr, $opt:ident)=>{

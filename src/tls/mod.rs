@@ -172,9 +172,11 @@ impl TlsConfig {
     /// * `cert_file` - the full path to a certificate (or certificate chain) in PEM format
     /// * `key_file` - the full path to the certificate's private key in PEM format
     pub fn new_cert(cert_file: impl Into<PathBuf>, key_file: impl Into<PathBuf>) -> Self {
-        Self::cert_builder(cert_file, key_file).fallible_build().expect(
-            "Programmer mistake in fields provided for TlsConfigBuilder in Config::new_cert()",
-        )
+        Self::cert_builder(cert_file, key_file)
+            .fallible_build()
+            .expect(
+                "Programmer mistake in fields provided for TlsConfigBuilder in Config::new_cert()",
+            )
     }
 
     /// Create an instance of [TlsConfigBuilder] to configure certificate encryption with server
