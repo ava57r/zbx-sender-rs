@@ -1,23 +1,40 @@
 use std::{convert::TryFrom, path::PathBuf};
 
-use super::ZabbixTlsConnect;
+use super::EncryptionType;
 
 #[derive(clap::Args)]
-pub struct ZabbixTlsCli {
-    /// How to connect to server or proxy
-    #[clap(long, arg_enum, default_value_t)]
-    pub tls_connect: ZabbixTlsConnect,
+/// Implementation of [`clap::Args`](https://docs.rs/clap/3/clap/trait.Args.html) that mirrors
+/// the [Zabbix native tool TLS configuration
+/// options](https://www.zabbix.com/documentation/current/en/manpages/zabbix_sender).
+pub struct ClapArgs {
+    /// How to encrypt the connection to Zabbix Server or Proxy
+    #[clap(long, arg_enum, default_value = "unencrypted")]
+    pub tls_connect: EncryptionType,
 
     /// PSK-identity string
-    #[clap(long, required_if_eq("tls-connect", "psk"), conflicts_with_all(&["tls-cert-file","tls-key-file"]))]
+    ///
+    /// Mutually exclusive with all certificate-related arguments (i.e. `--tls-cert-file`,
+    /// `--tls-ca-file`, *etc.*)
+    #[clap(
+        long,
+        required_if_eq("tls-connect", "psk"),
+        conflicts_with_all(Self::CERT_ARGS)
+    )]
     pub tls_psk_identity: Option<String>,
 
     /// Full pathname of a file containing the pre-shared key
-    #[clap(long, required_if_eq("tls-connect", "psk"), conflicts_with_all(&["tls-cert-file","tls-key-file"]))]
+    ///
+    /// Mutually exclusive with all certificate-related arguments (i.e. `--tls-cert-file`,
+    /// `--tls-ca-file`, *etc.*)
+    #[clap(
+        long,
+        required_if_eq("tls-connect", "psk"),
+        conflicts_with_all(Self::CERT_ARGS)
+    )]
     pub tls_psk_file: Option<PathBuf>,
 
-    /// Full pathname of a file containing the top-level CA(s) certificates for peer certificate verification
-    /// (default is to use system CA trust store)
+    /// Full pathname of a file containing the top-level CA(s) certificates for
+    /// peer certificate verification (default is to use system CA trust store)
     #[clap(long)]
     pub tls_ca_file: Option<PathBuf>,
 
@@ -43,16 +60,33 @@ pub struct ZabbixTlsCli {
     pub tls_key_file: Option<PathBuf>,
 }
 
-impl TryFrom<ZabbixTlsCli> for super::ZabbixTlsConfig {
-    // Returns a clap::Error so that conversion errors
-    // can be handled and displayed during clap argument
-    // validation, if desired. clap::Error implements
-    // std::error::Error as well, so can also be used in
-    // other error contexts.
+impl ClapArgs {
+    const CERT_ARGS: &'static [&'static str] = &[
+        "tls-cert-file",
+        "tls-key-file",
+        "tls-ca-file",
+        "tls-crl-file",
+        "tls-server-cert-issuer",
+        "tls-server-cert-subject",
+    ];
+}
+
+impl TryFrom<ClapArgs> for super::TlsConfig {
     type Error = clap::Error;
 
-    fn try_from(args: ZabbixTlsCli) -> Result<Self, Self::Error> {
-        let builder = super::ZabbixTlsConfigBuilder {
+    /// Converts command-line arguments into [TlsConfig](super::TlsConfig) using the [TryFrom] trait.
+    ///
+    /// Applies the validation logic of [TlsConfigBuilder](super::TlsConfigBuilder).
+    ///
+    /// ## Return Value
+    ///
+    /// Returns a [clap::Error] so that conversion errors
+    /// can be handled and displayed during clap argument
+    /// validation, if desired. [clap::Error] implements
+    /// [std::error::Error] as well, so can also be used in
+    /// other error contexts.
+    fn try_from(args: ClapArgs) -> Result<Self, Self::Error> {
+        let builder = super::TlsConfigBuilder {
             connect: Some(args.tls_connect),
             psk_identity: Some(args.tls_psk_identity),
             psk_file: Some(args.tls_psk_file),

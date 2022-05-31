@@ -12,7 +12,7 @@ use thiserror::Error;
 use tracing::warn;
 use x509_certificate::CapturedX509Certificate;
 
-use super::{ZabbixTlsConfig, ZabbixTlsConnect};
+use super::{TlsConfig, EncryptionType};
 
 #[derive(Error, Debug)]
 pub enum TlsError {
@@ -59,10 +59,10 @@ impl StreamAdapter {
     }
 }
 
-impl TryFrom<ZabbixTlsConfig> for StreamAdapter {
+impl TryFrom<TlsConfig> for StreamAdapter {
     type Error = crate::Error;
 
-    fn try_from(config: ZabbixTlsConfig) -> Result<Self, Self::Error> {
+    fn try_from(config: TlsConfig) -> Result<Self, Self::Error> {
         let config = config.try_into()?;
         Ok(Self {
             config: Arc::new(config),
@@ -70,17 +70,18 @@ impl TryFrom<ZabbixTlsConfig> for StreamAdapter {
     }
 }
 
-impl TryFrom<ZabbixTlsConfig> for rustls::ClientConfig {
+#[doc(hidden)]
+impl TryFrom<TlsConfig> for rustls::ClientConfig {
     type Error = TlsError;
 
-    fn try_from(zabbix_config: ZabbixTlsConfig) -> Result<Self, Self::Error> {
+    fn try_from(zabbix_config: TlsConfig) -> Result<Self, Self::Error> {
         unsupported_options!(zabbix_config, crl_file, psk_identity, psk_file);
         match zabbix_config.connect {
-            ZabbixTlsConnect::Unencrypted => Err(Self::Error::Unencrypted),
-            ZabbixTlsConnect::Psk => Err(Self::Error::Unsupported(
+            EncryptionType::Unencrypted => Err(Self::Error::Unencrypted),
+            EncryptionType::Psk => Err(Self::Error::Unsupported(
                 "rustls does not yet support PSK encryption".into(),
             )),
-            ZabbixTlsConnect::Cert => {
+            EncryptionType::Cert => {
                 let root_store = match zabbix_config.ca_file {
                     None => load_system_roots()?,
                     Some(path) => load_ca_file(path)?,

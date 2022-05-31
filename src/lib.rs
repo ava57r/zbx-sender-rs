@@ -1,11 +1,31 @@
-//! The library implementation Zabbix sender protocol
-//! more details:
-//! [Zabbix Documentation - 4 Trapper items](https://www.zabbix.com/documentation/3.0/manual/appendix/items/trapper).
-//! [Docs/protocols/zabbix sender/2.0](https://www.zabbix.org/wiki/Docs/protocols/zabbix_sender/2.0).
+#![warn(missing_docs)]
+//! Zabbix Sender Protocol implementation to transmit metrics to Zabbix Server.
 //!
-//! ## Package feature
+//! Provides sync (and optional async) methods to send key-value pairs to Zabbix Server and Zabbix
+//! Proxy. Can communicate unencrypted or via TLS with certificates or pre-shared key (PSK). Also
+//! provides a [`clap`](https://crates.io/crates/clap) command line parser that can be used to
+//! configure a TLS connection to Zabbix for crates that use this library.
 //!
-//! `async_tokio` - enables tokio async requests.
+//! ## Crate Features
+//!
+//! - `tracing` - enable logging via the `tracing` crate.
+//! - `async_tokio` - enable the async method `Sender.send_async()` to send values
+//!   asynchronously using `tokio::net::TcpStream`
+//! - `tls_rustls` - use the `rustls` crate to enable TLS certificate encryption with Zabbix
+//!   Server. As of version 0.20, `rustls` does **NOT** support PSK encryption.
+//! - `tls_openssl` - use the `openssl` crate to enable TLS certificate encryption or PSK
+//!   encryption with Zabbix Server.
+//! - `tls_rustls_tokio` - **MUST** be enabled when both `async_tokio` and `tls_rustls` are
+//!   enabled, because Cargo does not support conditional feature enablement (i.e.
+//!   <https://github.com/rust-lang/cargo/issues/1839>).
+//! - `tls_openssl_tokio` - **MUST** be enabled when both `async_tokio` and `tls_openssl` are
+//!   enabled.
+//! - `clap` - Include the struct that implements `clap::Args`, which can be included in downstream
+//!   users of this library to get command line argument parsing that mirrors Zabbix native TLS
+//!   configuration.
+#![cfg_attr(all(feature = "_tls_common", feature = "clap"), doc = r##"
+      See details in the documentation for [tls::ClapArgs].
+"##)]
 
 use serde::{Deserialize, Serialize};
 #[macro_use]
@@ -17,7 +37,7 @@ mod error;
 #[cfg(feature = "_tls_common")]
 pub mod tls;
 #[cfg(feature = "_tls_common")]
-use tls::ZabbixTlsConfig;
+use tls::TlsConfig;
 
 trait Stream: std::io::Read + std::io::Write {}
 
@@ -41,7 +61,7 @@ const ZBX_HEADER: usize = 5;
 const ZBX_HDR: &[u8; ZBX_HEADER] = b"ZBXD\x01";
 const ZBX_HDR_SIZE: usize = 13;
 
-/// implementation Zabbix sender protocol.
+/// Implementation of Zabbix Sender protocol.
 pub struct Sender {
     server: String,
     port: u16,
@@ -50,10 +70,23 @@ pub struct Sender {
 }
 
 impl Sender {
-    /// Creates a new instance of the client zabbix.
-    pub fn new(server: String, port: u16) -> Self {
+    /// Creates a new instance of the Zabbix client.
+    ///
+    /// ## Arguments
+    ///
+    /// * `server` - the hostname or IP address of the Zabbix Server or Zabbix Proxy.
+    /// * `port` - the Zabbix trapper port (also referred to as "Active Checks"). The Zabbix
+    ///   default is 10051.
+    ///
+    /// ## Examples
+    /// ```
+    /// use zbx_sender::Sender;
+    ///
+    /// let zabbix = Sender::new("zabbix.example.com", 10051);
+    /// ```
+    pub fn new(server: impl Into<String>, port: u16) -> Self {
         Self {
-            server,
+            server: server.into(),
             port,
             #[cfg(feature = "_tls_common")]
             tls: None,
@@ -62,7 +95,22 @@ impl Sender {
 
     #[cfg(feature = "_tls_common")]
     /// Configure the client to connect via TLS
-    pub fn with_tls(self, tls: ZabbixTlsConfig) -> Result<Self> {
+    ///
+    /// ## Arguments
+    ///
+    /// * `tls` - an instance of [TlsConfig]
+    ///
+    /// ## Examples
+    /// ```no_run
+    /// use zbx_sender::{Sender, tls::Config};
+    ///
+    /// let tls_config = Config::new_cert(
+    ///     "/etc/zabbix/sender.crt",
+    ///     "/etc/zabbix/sender.key",
+    /// );
+    /// let zabbix = Sender::new("zabbix.example.com", 10051).with_tls(tls_config);
+    /// ```
+    pub fn with_tls(self, tls: TlsConfig) -> Result<Self> {
         use crate::tls::TlsError::Unencrypted;
 
         let tls_config = tls.try_into().map_or_else(
@@ -81,7 +129,21 @@ impl Sender {
         })
     }
 
-    /// Sends data to the server according to Protocol rules
+    /// Send data to Zabbix server
+    ///
+    /// ## Arguments
+    ///
+    /// * `msg` - Any value for which the trait [ToMessage] is implemented
+    ///
+    /// ## Examples
+    /// ```no_run
+    /// # use zbx_sender::{Error, Sender};
+    /// # let zabbix = Sender::new("zabbix.example.com", 10051);
+    ///
+    /// zabbix.send(("hostname", "item_key", "value"))?;
+    /// # Ok::<(), Error>(())
+    /// ```
+    ///
     pub fn send<T>(&self, msg: T) -> Result<Response>
     where
         T: ToMessage,
@@ -146,6 +208,9 @@ impl Sender {
     }
 
     #[cfg(feature = "async_tokio")]
+    /// Async version of [self.send()]
+    ///
+    /// TODO
     pub async fn send_async<T>(&self, msg: T) -> Result<Response>
     where
         T: ToMessage,
@@ -244,6 +309,51 @@ impl<'a> From<(&'a str, &'a str, &'a str)> for SendValue {
 }
 
 /// The message that is sent to the Zabbix server.
+///
+/// ## Official Zabbix Documentation
+///
+/// - [Zabbix Sender Protocol](https://www.zabbix.com/documentation/current/en/manual/appendix/protocols/header_datalen)
+/// - [Message format](https://www.zabbix.com/documentation/current/en/manual/appendix/items/trapper)
+///
+/// ## Protocol Details
+///
+/// ```text
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                            "ZBXD"                             |     Flags     |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                   Data Length (Little Endian)                 |  Reserved ... |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |      Reserved (continued) [zero-filled]       | JSON Message Data (UTF-8) ... |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// |                                       ...                                     |
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
+///
+/// For Zabbix Sender, the Flags field is always `0x01`. Other documented flag values are for
+/// Zabbix Server-Proxy communication.
+///
+/// ## Message Format
+///
+/// ```json
+/// {
+///     "request": "sender data",
+///     "data": [
+///         {
+///             "host": "<Host Name in Zabbix Server>",
+///             "key": "<Item Key in Zabbix Server>",
+///             "value": "<Item Value>",
+///             "clock": <Unix timestamp>,
+///             "ns": <Nanosecond fraction>
+///         }
+///     ]
+/// }
+/// ```
+///
+/// `clock` and `ns` are optional fields that are not currently implemented by the `zbx_sender`
+/// crate.
+///
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message {
     request: &'static str,
@@ -279,6 +389,7 @@ impl Default for Message {
 
 /// Contract for types that provide the ability to cast to a `Message` type.
 pub trait ToMessage {
+    /// Convert the type to a [Message]
     fn to_message(self) -> Message;
 }
 

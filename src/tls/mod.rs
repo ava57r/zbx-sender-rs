@@ -1,3 +1,15 @@
+//! TLS configuration for [Sender](crate::Sender)
+//!
+//! Provides common configuration for TLS connection to Zabbix Server and Zabbix Proxy.
+//! Implementations are private submodules of this module (e.g. `rustls`, `openssl`).
+//!
+//! To configure encrypted communication with Zabbix, a [TlsConfig] struct is created, using
+//! following methods, depending on which type of encryption is required:
+//! * [TlsConfig::new_psk] - PSK encryption with a PSK identity string and key file
+//! * [TlsConfig::new_cert] - Certificate encryption with client certificate authentication and
+//!   server certificate verification via system trust roots
+//! * [TlsConfig::cert_builder] - Same as `new_cert` but creates a [TlsConfigBuilder] with additional methods for
+//!   stricter server verification.
 use std::path::PathBuf;
 
 use derive_builder::Builder;
@@ -16,21 +28,22 @@ macro_rules! unsupported_options {
 #[cfg(feature = "clap")]
 mod cli;
 #[cfg(feature = "clap")]
-pub use cli::ZabbixTlsCli;
+pub use cli::ClapArgs;
 
 #[cfg(feature = "tls_rustls")]
 mod rustls;
 #[cfg(feature = "tls_rustls")]
-pub use self::rustls::{StreamAdapter, TlsError};
+pub(crate) use self::rustls::{StreamAdapter, TlsError};
 
 #[cfg(feature = "tls_openssl")]
 mod openssl;
 #[cfg(feature = "tls_openssl")]
-pub use self::openssl::{StreamAdapter, TlsError};
+pub(crate) use self::openssl::{StreamAdapter, TlsError};
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "clap", derive(clap::ArgEnum))]
-pub enum ZabbixTlsConnect {
+/// Encryption method used for the connection to Zabbix
+pub enum EncryptionType {
     /// connect without encryption (default)
     Unencrypted,
     /// connect using TLS and a pre-shared key
@@ -39,40 +52,50 @@ pub enum ZabbixTlsConnect {
     Cert,
 }
 
-impl Default for ZabbixTlsConnect {
-    fn default() -> Self {
-        Self::Unencrypted
-    }
-}
-
-#[derive(Builder, Default)]
+#[derive(Builder)]
 #[builder(
     custom_constructor,
     create_empty = "empty",
-    build_fn(validate = "Self::validate")
+    build_fn(validate = "Self::validate"),
+    pattern = "owned"
 )]
-pub struct ZabbixTlsConfig {
+/// TLS configuration for [Sender](crate::Sender)
+///
+/// Provided to [Sender.with_tls()](crate::Sender.with_tls) to set up an encrypted connection.
+pub struct TlsConfig {
     #[builder(setter(custom))]
-    pub(crate) connect: ZabbixTlsConnect,
+    pub(crate) connect: EncryptionType,
+
     #[builder(setter(custom))]
     psk_identity: Option<String>,
     #[builder(setter(custom))]
     psk_file: Option<PathBuf>,
-    #[builder(default, setter(strip_option, into))]
-    ca_file: Option<PathBuf>,
-    #[builder(default, setter(strip_option, into))]
-    crl_file: Option<PathBuf>,
-    #[builder(default, setter(strip_option, into))]
-    server_cert_issuer: Option<String>,
-    #[builder(default, setter(strip_option, into))]
-    server_cert_subject: Option<String>,
+
     #[builder(setter(custom))]
     cert_file: Option<PathBuf>,
     #[builder(setter(custom))]
     key_file: Option<PathBuf>,
+
+    /// Full pathname of a file containing the top-level CA certificate(s) for
+    /// server certificate verification (default is to use system CA trust store)
+    #[builder(default, setter(strip_option, into))]
+    ca_file: Option<PathBuf>,
+
+    /// (**Currently unsupported by both the `openssl` and `rustls` backends**) A file containing
+    /// revoked server certificates to reject connections from
+    #[builder(default, setter(strip_option, into))]
+    crl_file: Option<PathBuf>,
+
+    /// An X.509 name that the server certificate's Issuer field must match exactly
+    #[builder(default, setter(strip_option, into))]
+    server_cert_issuer: Option<String>,
+
+    /// An X.509 name that the server certificate's Subject field must match exactly
+    #[builder(default, setter(strip_option, into))]
+    server_cert_subject: Option<String>,
 }
 
-impl ZabbixTlsConfigBuilder {
+impl TlsConfigBuilder {
     fn validate(&self) -> Result<(), String> {
         macro_rules! validate_inner_is_none{
             ($obj:expr, $why:expr, $field:ident)=>{
@@ -90,7 +113,7 @@ impl ZabbixTlsConfigBuilder {
         }
 
         match self.connect {
-            Some(ZabbixTlsConnect::Unencrypted) => {
+            Some(EncryptionType::Unencrypted) => {
                 validate_inner_is_none!(
                     self,
                     "connection is unencrypted",
@@ -104,7 +127,7 @@ impl ZabbixTlsConfigBuilder {
                     psk_file
                 );
             }
-            Some(ZabbixTlsConnect::Psk) => {
+            Some(EncryptionType::Psk) => {
                 validate_inner_is_none!(
                     self,
                     "connection is encrypted by PSK",
@@ -116,7 +139,7 @@ impl ZabbixTlsConfigBuilder {
                     key_file
                 );
             }
-            Some(ZabbixTlsConnect::Cert) => {
+            Some(EncryptionType::Cert) => {
                 validate_inner_is_none!(
                     self,
                     "connection is encrypted by certificate",
@@ -130,44 +153,64 @@ impl ZabbixTlsConfigBuilder {
     }
 }
 
-impl ZabbixTlsConfig {
-    pub fn new_unencrypted() -> Self {
-        Self::default()
-    }
-
+impl TlsConfig {
+    /// Configure TLS for PSK encryption
+    ///
+    /// ## Arguments
+    ///
+    /// * `identity` - the identity string for this key expected by Zabbix Server
+    /// * `key_file` - the full path to a file containing the pre-shared key, encoded
+    ///   as hexadecimal digits
     pub fn new_psk(identity: impl Into<String>, key_file: impl Into<PathBuf>) -> Self {
         // Run this configuration through the builder
         // so that ...Builder::validate() gets run, in case
         // any future changes add value validation.
-        ZabbixTlsConfigBuilder {
-            connect: Some(ZabbixTlsConnect::Psk),
+        TlsConfigBuilder {
+            connect: Some(EncryptionType::Psk),
             psk_identity: Some(Some(identity.into())),
             psk_file: Some(Some(key_file.into())),
             cert_file: Some(None),
             key_file: Some(None),
-            ..ZabbixTlsConfigBuilder::empty()
+            ..TlsConfigBuilder::empty()
         }
         .build()
-        .expect("Programmer mistake in fields provided for ZabbixTlsConfigBuilder in ZabbixTlsConfig::new_psk()")
+        .expect("Programmer mistake in fields provided for TlsConfigBuilder in Config::new_psk()")
     }
 
+    /// Configure TLS for certificate encryption
+    ///
+    /// ## Arguments
+    ///
+    /// * `cert_file` - the full path to a certificate (or certificate chain) in PEM format
+    /// * `key_file` - the full path to the certificate's private key in PEM format
     pub fn new_cert(cert_file: impl Into<PathBuf>, key_file: impl Into<PathBuf>) -> Self {
         Self::cert_builder(cert_file, key_file).build().expect(
-            "Programmer mistake in fields provided for ZabbixTlsConfigBuilder in ZabbixTlsConfig::new_cert()",
+            "Programmer mistake in fields provided for TlsConfigBuilder in Config::new_cert()",
         )
     }
 
+    /// Create an instance of [TlsConfigBuilder] to configure certificate encryption with server
+    /// authentication
+    ///
+    /// ## Arguments
+    ///
+    /// * `cert_file` - the full path to a certificate (or certificate chain) in PEM format
+    /// * `key_file` - the full path to the certificate's private key in PEM format
+    ///
+    /// ## Return
+    ///
+    /// * An instance of [TlsConfigBuilder] to customize server TLS authentication
     pub fn cert_builder(
         cert_file: impl Into<PathBuf>,
         key_file: impl Into<PathBuf>,
-    ) -> ZabbixTlsConfigBuilder {
-        ZabbixTlsConfigBuilder {
-            connect: Some(ZabbixTlsConnect::Cert),
+    ) -> TlsConfigBuilder {
+        TlsConfigBuilder {
+            connect: Some(EncryptionType::Cert),
             cert_file: Some(Some(cert_file.into())),
             key_file: Some(Some(key_file.into())),
             psk_identity: Some(None),
             psk_file: Some(None),
-            ..ZabbixTlsConfigBuilder::empty()
+            ..TlsConfigBuilder::empty()
         }
     }
 }

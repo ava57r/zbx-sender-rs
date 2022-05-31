@@ -11,10 +11,18 @@ readme = "README.md"
 license = "MIT"
 edition = "2021"
 
+[package.metadata."docs.rs"]
+features = [
+	"async_tokio",
+	"tls_openssl",
+	"tls_openssl_tokio",
+	"clap",
+]
+
 [features]
 async_tokio = ["tokio"]
-_tls_common = ["x509-certificate", "derive_builder"]
-tls_rustls = ["_tls_common", "rustls", "rustls-pemfile", "rustls-native-certs"]
+_tls_common = ["derive_builder"]
+tls_rustls = ["_tls_common", "rustls", "rustls-pemfile", "rustls-native-certs", "x509-certificate"]
 tls_openssl = ["_tls_common", "openssl", "openssl-errors", "hex"]
 tls_rustls_tokio = ["tokio-rustls"]
 tls_openssl_tokio = ["tokio-openssl"]

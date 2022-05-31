@@ -22,7 +22,7 @@ use tokio_openssl::SslStream as AsyncSslStream;
 #[cfg(feature = "tracing")]
 use tracing::error;
 
-use super::{ZabbixTlsConfig, ZabbixTlsConnect};
+use super::{TlsConfig, EncryptionType};
 
 #[derive(Error, Debug)]
 pub enum TlsError {
@@ -82,24 +82,25 @@ impl StreamAdapter {
     }
 }
 
-impl TryFrom<ZabbixTlsConfig> for StreamAdapter {
+impl TryFrom<TlsConfig> for StreamAdapter {
     type Error = crate::Error;
 
-    fn try_from(config: ZabbixTlsConfig) -> Result<Self, Self::Error> {
+    fn try_from(config: TlsConfig) -> Result<Self, Self::Error> {
         Ok(Self {
             connector: config.try_into()?,
         })
     }
 }
 
-impl TryFrom<ZabbixTlsConfig> for SslConnector {
+#[doc(hidden)]
+impl TryFrom<TlsConfig> for SslConnector {
     type Error = TlsError;
 
-    fn try_from(zabbix_config: ZabbixTlsConfig) -> Result<Self, Self::Error> {
-        use ZabbixTlsConnect::*;
+    fn try_from(zabbix_config: TlsConfig) -> Result<Self, Self::Error> {
+        use EncryptionType::*;
 
         unsupported_options!(zabbix_config, crl_file);
-        if let ZabbixTlsConnect::Unencrypted = zabbix_config.connect {
+        if let EncryptionType::Unencrypted = zabbix_config.connect {
             return Err(Self::Error::Unencrypted);
         }
         // Do some stuff common to PSK and certificate encryption
@@ -176,9 +177,9 @@ impl TryFrom<ZabbixTlsConfig> for SslConnector {
 
 fn set_openssl_ciphers(
     builder: &mut SslConnectorBuilder,
-    mode: &ZabbixTlsConnect,
+    mode: &EncryptionType,
 ) -> Result<(), ErrorStack> {
-    use ZabbixTlsConnect::*;
+    use EncryptionType::*;
 
     let openssl_version_number = openssl::version::number();
     if matches!(mode, Psk) && openssl_version_number >= 0x1010100f {

@@ -5,7 +5,7 @@ use std::convert::TryInto;
 use clap::Parser;
 
 use zbx_sender::{
-    tls::{ZabbixTlsCli, ZabbixTlsConfig},
+    tls::{ClapArgs, TlsConfig},
     Response, Result, Sender,
 };
 
@@ -16,7 +16,7 @@ struct Cli {
     #[clap(short, long, default_value = "10051")]
     port: u16,
     #[clap(flatten)]
-    tls: ZabbixTlsCli,
+    tls: ClapArgs,
 }
 
 fn send_one_value(sender: &Sender) -> Result<Response> {
@@ -25,7 +25,7 @@ fn send_one_value(sender: &Sender) -> Result<Response> {
 
 fn main() {
     let args = Cli::parse();
-    let tls_config: ZabbixTlsConfig = args.tls.try_into().unwrap();
+    let tls_config: TlsConfig = args.tls.try_into().unwrap();
     let sender = Sender::new(args.server.to_owned(), args.port)
         .with_tls(tls_config)
         .unwrap();
