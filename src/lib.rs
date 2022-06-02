@@ -105,9 +105,9 @@ impl Sender {
     ///
     /// ## Examples
     /// ```no_run
-    /// use zbx_sender::{Sender, tls::Config};
+    /// use zbx_sender::{Sender, tls::TlsConfig};
     ///
-    /// let tls_config = Config::new_cert(
+    /// let tls_config = TlsConfig::new_cert(
     ///     "/etc/zabbix/sender.crt",
     ///     "/etc/zabbix/sender.key",
     /// );
@@ -142,7 +142,6 @@ impl Sender {
     /// ```no_run
     /// # use zbx_sender::{Error, Sender};
     /// # let zabbix = Sender::new("zabbix.example.com", 10051);
-    ///
     /// zabbix.send(("hostname", "item_key", "value"))?;
     /// # Ok::<(), Error>(())
     /// ```
@@ -211,9 +210,22 @@ impl Sender {
     }
 
     #[cfg(feature = "async_tokio")]
-    /// Async version of [self.send()]
+    /// Async version of `Sender.send()`
     ///
-    /// TODO
+    /// ## Arguments
+    ///
+    /// * `msg` - Any value for which the trait [ToMessage] is implemented
+    ///
+    /// ## Examples
+    /// ```no_run
+    /// # use zbx_sender::{Error, Sender};
+    /// # let zabbix = Sender::new("zabbix.example.com", 10051);
+    /// # tokio_test::block_on(async {
+    /// zabbix.send_async(("hostname", "item_key", "value")).await?;
+    /// # Ok::<(), Error>(())
+    /// # });
+    /// # Ok::<(), Error>(())
+    /// ```
     pub async fn send_async<T>(&self, msg: T) -> Result<Response>
     where
         T: ToMessage,
