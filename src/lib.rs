@@ -150,6 +150,32 @@ impl Sender {
     where
         T: ToMessage,
     {
+        let conn = self.connect()?;
+        self.send_to(msg, conn)
+    }
+
+    fn connect(&self) -> Result<Box<dyn Stream>> {
+        #[cfg_attr(feature = "_tls_common", allow(unused_mut))]
+        let stream = Box::new(TcpStream::connect((self.server.as_str(), self.port))?);
+
+        #[cfg(feature = "tracing")]
+        debug!(?stream, "connected to Zabbix");
+
+        #[cfg(feature = "_tls_common")]
+        let stream = if let Some(t) = &self.tls {
+            Box::new(t.connect(&self.server, *stream)?) as Box<dyn Stream>
+        } else {
+            stream
+        };
+
+        Ok(stream)
+    }
+
+    fn send_to<T, S>(&self, msg: T, mut stream: S) -> Result<Response>
+    where
+        T: ToMessage,
+        S: Stream,
+    {
         // This use statement must be scoped to the function body
         // or the methods provided by `byteorder` (e.g. `read_u64`)
         // conflict with the same methods provided by
@@ -161,20 +187,8 @@ impl Sender {
         let msg = msg.to_message();
         let send_data = Self::encode_request(&msg)?;
 
-        #[cfg_attr(feature = "_tls_common", allow(unused_mut))]
-        let mut stream = TcpStream::connect((self.server.as_str(), self.port))?;
         #[cfg(feature = "tracing")]
-        {
-            debug!(?stream, "connected to Zabbix");
-            trace!(data = ?send_data, "request bytes");
-        }
-        #[cfg(feature = "_tls_common")]
-        let mut stream = if let Some(t) = &self.tls {
-            Box::new(t.connect(&self.server, stream)?)
-        } else {
-            Box::new(stream) as Box<dyn Stream>
-        };
-
+        trace!(data = ?send_data, "request bytes");
         stream.write_all(&send_data)?;
         #[cfg(feature = "tracing")]
         debug!(
@@ -230,6 +244,33 @@ impl Sender {
     where
         T: ToMessage,
     {
+        let conn = self.connect_async().await?;
+        self.send_async_to(msg, conn).await
+    }
+
+    async fn connect_async(&self) -> Result<Box<dyn AsyncStream>> {
+        #[cfg_attr(feature = "_tls_common", allow(unused_mut))]
+        let stream =
+            Box::new(tokio::net::TcpStream::connect((self.server.as_str(), self.port)).await?);
+
+        #[cfg(feature = "tracing")]
+        debug!(?stream, "connected to Zabbix");
+
+        #[cfg(feature = "_tls_common")]
+        let stream = if let Some(t) = &self.tls {
+            Box::new(t.connect_async(&self.server, *stream).await?) as Box<dyn AsyncStream>
+        } else {
+            stream
+        };
+
+        Ok(stream)
+    }
+
+    async fn send_async_to<T, S>(&self, msg: T, mut stream: S) -> Result<Response>
+    where
+        T: ToMessage,
+        S: AsyncStream,
+    {
         // This use statement must be scoped to the function body.
         // See explanation in comment at `fn send()`.
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -237,21 +278,8 @@ impl Sender {
         let msg = msg.to_message();
         let send_data = Self::encode_request(&msg)?;
 
-        #[cfg_attr(feature = "_tls_common", allow(unused_mut))]
-        let mut stream = tokio::net::TcpStream::connect((self.server.as_str(), self.port)).await?;
         #[cfg(feature = "tracing")]
-        {
-            debug!(?stream, "connected to Zabbix");
-            trace!(data = ?send_data, "request bytes");
-        }
-
-        #[cfg(feature = "_tls_common")]
-        let mut stream = if let Some(t) = &self.tls {
-            Box::new(t.connect_async(&self.server, stream).await?)
-        } else {
-            Box::new(stream) as Box<dyn AsyncStream>
-        };
-
+        trace!(data = ?send_data, "request bytes");
         stream.write_all(&send_data).await?;
         #[cfg(feature = "tracing")]
         debug!(
