@@ -463,6 +463,15 @@ impl ToMessage for Vec<SendValue> {
     }
 }
 
+impl<'a> ToMessage for Vec<(&'a str, &'a str, &'a str)> {
+    fn to_message(self) -> Message {
+        let mut msg = Message::default();
+        msg.data.extend(self.into_iter().map(SendValue::from));
+
+        msg
+    }
+}
+
 /// Structure of Zabbix server's response
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Response {
