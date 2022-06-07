@@ -1,0 +1,46 @@
+name: zabbix-integration
+# TODO: just for testing
+on: [push,workflow_dispatch]
+jobs:
+  temporary-passwords:
+    runs-on: ubuntu-latest
+    outputs:
+      postgres_password: ${{ steps.postgres_password.outputs.password }}
+    steps:
+      - id: postgres_password
+        uses: aammirmirza/RandomPasswordGenerator@1.2
+        with:
+          length: 32
+  test-unencrypted:
+    runs-on: ubuntu-latest
+    needs: temporary-passwords
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - name: Call Zabbix API to create test Host and Items
+        run: ./script/zabbix_api_setup.py --wait 120 http://localhost:8080
+    services:
+      postgres-server:
+        image: postgres:latest
+        env:
+          POSTGRES_USER: zabbix
+          POSTGRES_PASSWORD: ${{ needs.temporary-passwords.outputs.postgres_password }}
+          POSTGRES_DB: zabbix
+      zabbix-frontend:
+        image: zabbix/zabbix-web-nginx-pgsql:latest
+        env:
+          POSTGRES_USER: zabbix
+          POSTGRES_PASSWORD: ${{ needs.temporary-passwords.outputs.postgres_password }}
+          POSTGRES_DB: zabbix
+          PHP_TZ: "Etc/UTC"
+          ZBX_SERVER_HOST: zabbix-server
+        ports:
+          - "8080:8080"
+      zabbix-server:
+        image: zabbix/zabbix-server-pgsql:latest
+        env:
+          POSTGRES_USER: zabbix
+          POSTGRES_PASSWORD: ${{ needs.temporary-passwords.outputs.postgres_password }}
+          POSTGRES_DB: zabbix
+        ports:
+          - "10051:10051"
