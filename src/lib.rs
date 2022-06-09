@@ -46,10 +46,10 @@ trait Stream: std::io::Read + std::io::Write {}
 
 impl<T: std::io::Read + std::io::Write> Stream for T {}
 
-#[cfg(all(feature = "_tls_common", feature = "async_tokio"))]
+#[cfg(feature = "async_tokio")]
 trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin {}
 
-#[cfg(all(feature = "_tls_common", feature = "async_tokio"))]
+#[cfg(feature = "async_tokio")]
 impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin> AsyncStream for T {}
 
 pub use crate::error::{Error, Result};
