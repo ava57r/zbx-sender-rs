@@ -17,6 +17,13 @@ jobs:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          default: true
+      - name: Build project
+        run: cargo build --release --features "async_tokio clap"
       - name: Call Zabbix API to create test Host and Items
         run: ./script/zabbix_api_setup.py --wait 120 http://localhost:8080
     services:
