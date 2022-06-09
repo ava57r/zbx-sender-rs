@@ -7,10 +7,10 @@ jobs:
     outputs:
       postgres_password: ${{ steps.postgres_password.outputs.password }}
     steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
       - id: postgres_password
-        uses: aammirmirza/RandomPasswordGenerator@1.2
-        with:
-          length: 32
+        uses: ./.github/actions/generate-password
   test-unencrypted:
     runs-on: ubuntu-latest
     needs: temporary-passwords
