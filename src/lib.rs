@@ -46,10 +46,10 @@ trait Stream: std::io::Read + std::io::Write {}
 
 impl<T: std::io::Read + std::io::Write> Stream for T {}
 
-#[cfg(all(feature = "_tls_common", feature = "async_tokio"))]
+#[cfg(feature = "async_tokio")]
 trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin {}
 
-#[cfg(all(feature = "_tls_common", feature = "async_tokio"))]
+#[cfg(feature = "async_tokio")]
 impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin> AsyncStream for T {}
 
 pub use crate::error::{Error, Result};
@@ -150,6 +150,32 @@ impl Sender {
     where
         T: ToMessage,
     {
+        let conn = self.connect()?;
+        self.send_to(msg, conn)
+    }
+
+    fn connect(&self) -> Result<Box<dyn Stream>> {
+        #[cfg_attr(feature = "_tls_common", allow(unused_mut))]
+        let stream = Box::new(TcpStream::connect((self.server.as_str(), self.port))?);
+
+        #[cfg(feature = "tracing")]
+        debug!(?stream, "connected to Zabbix");
+
+        #[cfg(feature = "_tls_common")]
+        let stream = if let Some(t) = &self.tls {
+            Box::new(t.connect(&self.server, *stream)?) as Box<dyn Stream>
+        } else {
+            stream
+        };
+
+        Ok(stream)
+    }
+
+    fn send_to<T, S>(&self, msg: T, mut stream: S) -> Result<Response>
+    where
+        T: ToMessage,
+        S: Stream,
+    {
         // This use statement must be scoped to the function body
         // or the methods provided by `byteorder` (e.g. `read_u64`)
         // conflict with the same methods provided by
@@ -161,20 +187,8 @@ impl Sender {
         let msg = msg.to_message();
         let send_data = Self::encode_request(&msg)?;
 
-        #[cfg_attr(feature = "_tls_common", allow(unused_mut))]
-        let mut stream = TcpStream::connect((self.server.as_str(), self.port))?;
         #[cfg(feature = "tracing")]
-        {
-            debug!(?stream, "connected to Zabbix");
-            trace!(data = ?send_data, "request bytes");
-        }
-        #[cfg(feature = "_tls_common")]
-        let mut stream = if let Some(t) = &self.tls {
-            Box::new(t.connect(&self.server, stream)?)
-        } else {
-            Box::new(stream) as Box<dyn Stream>
-        };
-
+        trace!(data = ?send_data, "request bytes");
         stream.write_all(&send_data)?;
         #[cfg(feature = "tracing")]
         debug!(
@@ -230,6 +244,35 @@ impl Sender {
     where
         T: ToMessage,
     {
+        let conn = self.connect_async().await?;
+        self.send_async_to(msg, conn).await
+    }
+
+    #[cfg(feature = "async_tokio")]
+    async fn connect_async(&self) -> Result<Box<dyn AsyncStream>> {
+        #[cfg_attr(feature = "_tls_common", allow(unused_mut))]
+        let stream =
+            Box::new(tokio::net::TcpStream::connect((self.server.as_str(), self.port)).await?);
+
+        #[cfg(feature = "tracing")]
+        debug!(?stream, "connected to Zabbix");
+
+        #[cfg(feature = "_tls_common")]
+        let stream = if let Some(t) = &self.tls {
+            Box::new(t.connect_async(&self.server, *stream).await?) as Box<dyn AsyncStream>
+        } else {
+            stream
+        };
+
+        Ok(stream)
+    }
+
+    #[cfg(feature = "async_tokio")]
+    async fn send_async_to<T, S>(&self, msg: T, mut stream: S) -> Result<Response>
+    where
+        T: ToMessage,
+        S: AsyncStream,
+    {
         // This use statement must be scoped to the function body.
         // See explanation in comment at `fn send()`.
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -237,21 +280,8 @@ impl Sender {
         let msg = msg.to_message();
         let send_data = Self::encode_request(&msg)?;
 
-        #[cfg_attr(feature = "_tls_common", allow(unused_mut))]
-        let mut stream = tokio::net::TcpStream::connect((self.server.as_str(), self.port)).await?;
         #[cfg(feature = "tracing")]
-        {
-            debug!(?stream, "connected to Zabbix");
-            trace!(data = ?send_data, "request bytes");
-        }
-
-        #[cfg(feature = "_tls_common")]
-        let mut stream = if let Some(t) = &self.tls {
-            Box::new(t.connect_async(&self.server, stream).await?)
-        } else {
-            Box::new(stream) as Box<dyn AsyncStream>
-        };
-
+        trace!(data = ?send_data, "request bytes");
         stream.write_all(&send_data).await?;
         #[cfg(feature = "tracing")]
         debug!(
@@ -435,6 +465,15 @@ impl ToMessage for Vec<SendValue> {
     }
 }
 
+impl<'a> ToMessage for Vec<(&'a str, &'a str, &'a str)> {
+    fn to_message(self) -> Message {
+        let mut msg = Message::default();
+        msg.data.extend(self.into_iter().map(SendValue::from));
+
+        msg
+    }
+}
+
 /// Structure of Zabbix server's response
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Response {
@@ -479,5 +518,218 @@ impl Response {
         // This is not public API, so the following should panic
         // if an invalid regex capture is requested.
         RE.captures(&self.info).map(|x| x[name].to_string())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use mock_io::sync::{MockListener, MockStream};
+
+    use super::*;
+
+    fn json_to_packet(json: impl AsRef<[u8]>) -> Vec<u8> {
+        let body = json.as_ref();
+        let len: u32 = body.len().try_into().unwrap();
+        let mut packet: Vec<u8> = Vec::new();
+        packet.extend_from_slice(ZBX_HDR);
+        packet.extend_from_slice(&len.to_le_bytes());
+        packet.extend_from_slice(&[0, 0, 0, 0]);
+        packet.extend_from_slice(body);
+        packet
+    }
+
+    fn verify_request(mut stream: impl Read, expected: impl AsRef<[u8]>) {
+        let expected = expected.as_ref();
+        let hdr = &mut [0u8; ZBX_HDR_SIZE];
+        stream.read_exact(&mut hdr[..]).unwrap();
+        assert_eq!(hdr, &expected[..ZBX_HDR_SIZE]);
+
+        let len_end = ZBX_HEADER + std::mem::size_of::<u32>();
+        let len = u32::from_le_bytes((&hdr[ZBX_HEADER..len_end]).try_into().unwrap());
+
+        let mut body = vec![0u8; len as usize];
+        stream.read_exact(&mut body[..]).unwrap();
+        assert_eq!(body, &expected[ZBX_HDR_SIZE..]);
+    }
+
+    fn verify_response(response: &Response, n_values_sent: i32) {
+        assert!(response.success());
+        let n_processed = response.processed_cnt().expect("processed_cnt missing");
+        assert_eq!(n_processed, n_values_sent);
+        let n_failed = response.failed_cnt().expect("failed_cnt missing");
+        assert!(n_failed == 0);
+        let n_total = response.total_cnt().expect("total_cnt missing");
+        assert_eq!(n_total, n_values_sent);
+        let n_seconds = response.seconds_spent().expect("seconds_spent missing");
+        assert!(n_seconds > 0.0);
+    }
+
+    #[test]
+    fn single_value() {
+        let expected_packet = json_to_packet(concat!(
+            r#"{"request":"sender data","data":["#,
+            r#"{"host":"test_host","key":"test_key","value":"12345678"}"#,
+            r#"]}"#
+        ));
+
+        let (listener, handle) = MockListener::new();
+
+        let h_client = std::thread::spawn(move || {
+            let stream = MockStream::connect(&handle).unwrap();
+            let sender = Sender::new("test_server", 10051);
+            let response = sender.send_to(("test_host", "test_key", "12345678"), stream).unwrap();
+            verify_response(&response, 1);
+        });
+
+        // Accept just one connection
+        let mut stream = listener.accept().unwrap();
+        verify_request(Read::by_ref(&mut stream), &expected_packet);
+        let response = json_to_packet(
+            r#"{"response":"success","info":"processed: 1; failed: 0; total: 1; seconds spent: 0.1"}"#
+        );
+        stream.write_all(&response[..]).unwrap();
+
+        // This serves two purposes:
+        // 
+        // 1. Ensures the client thread didn't panic
+        // 2. Ensures the client did close the "connection",
+        //    or this line would block forever, because the
+        //    above test server code doesn't.
+        h_client.join().unwrap();
+    }
+
+    #[test]
+    fn multiple_values() {
+        let expected_packet = json_to_packet(concat!(
+            r#"{"request":"sender data","data":["#,
+            r#"{"host":"test_host","key":"test_key","value":"12345678"},"#,
+            r#"{"host":"test_host","key":"test_key2","value":"87654321"}"#,
+            r#"]}"#
+        ));
+
+        let (listener, handle) = MockListener::new();
+
+        let h_client = std::thread::spawn(move || {
+            let stream = MockStream::connect(&handle).unwrap();
+            let sender = Sender::new("test_server", 10051);
+            let message = vec![("test_host", "test_key", "12345678"), ("test_host", "test_key2", "87654321")].to_message();
+            let response = sender.send_to(message, stream).unwrap();
+            verify_response(&response, 2);
+        });
+
+        // Accept just one connection
+        let mut stream = listener.accept().unwrap();
+        verify_request(Read::by_ref(&mut stream), &expected_packet);
+        let response = json_to_packet(
+            r#"{"response":"success","info":"processed: 2; failed: 0; total: 2; seconds spent: 0.1"}"#
+        );
+        stream.write_all(&response[..]).unwrap();
+
+        // This serves two purposes:
+        // 
+        // 1. Ensures the client thread didn't panic
+        // 2. Ensures the client did close the "connection",
+        //    or this line would block forever, because the
+        //    above test server code doesn't.
+        h_client.join().unwrap();
+    }
+
+    #[cfg(feature = "async_tokio")]
+    mod async_tokio {
+        use mock_io::tokio::{
+            MockListener as AsyncMockListener,
+            MockStream as AsyncMockStream
+        };
+        use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+        
+        use super::*;
+
+        #[tokio::test]
+        async fn single_value() {
+            let expected_packet = json_to_packet(concat!(
+                r#"{"request":"sender data","data":["#,
+                r#"{"host":"test_host","key":"test_key","value":"12345678"}"#,
+                r#"]}"#
+            ));
+
+            let (mut listener, handle) = AsyncMockListener::new();
+
+            let h_client = tokio::spawn(async move {
+                let stream = AsyncMockStream::connect(&handle).unwrap();
+                let sender = Sender::new("test_server", 10051);
+                let response = sender.send_async_to(("test_host", "test_key", "12345678"), stream).await.unwrap();
+                verify_response(&response, 1);
+            });
+
+            // Accept just one connection
+            let stream = listener.accept().await.unwrap();
+            let (stream_r, mut stream_w) = stream.split(); 
+            verify_request(stream_r, &expected_packet).await;
+            let response = json_to_packet(
+                r#"{"response":"success","info":"processed: 1; failed: 0; total: 1; seconds spent: 0.1"}"#
+            );
+            stream_w.write_all(&response[..]).await.unwrap();
+
+            // This serves two purposes:
+            // 
+            // 1. Ensures the client thread didn't panic
+            // 2. Ensures the client did close the "connection",
+            //    or this line would block forever, because the
+            //    above test server code doesn't.
+            h_client.await.unwrap();
+        }
+
+        #[tokio::test]
+        async fn multiple_values() {
+            let expected_packet = json_to_packet(concat!(
+                r#"{"request":"sender data","data":["#,
+                r#"{"host":"test_host","key":"test_key","value":"12345678"},"#,
+                r#"{"host":"test_host","key":"test_key2","value":"87654321"}"#,
+                r#"]}"#
+            ));
+
+            let (mut listener, handle) = AsyncMockListener::new();
+
+            let h_client = tokio::spawn(async move {
+                let stream = AsyncMockStream::connect(&handle).unwrap();
+                let sender = Sender::new("test_server", 10051);
+                let message = vec![("test_host", "test_key", "12345678"), ("test_host", "test_key2", "87654321")].to_message();
+                let response = sender.send_async_to(message, stream).await.unwrap();
+                verify_response(&response, 2);
+            });
+
+            // Accept just one connection
+            let stream = listener.accept().await.unwrap();
+            let (stream_r, mut stream_w) = stream.split(); 
+            verify_request(stream_r, &expected_packet).await;
+            let response = json_to_packet(
+                r#"{"response":"success","info":"processed: 2; failed: 0; total: 2; seconds spent: 0.1"}"#
+            );
+            stream_w.write_all(&response[..]).await.unwrap();
+
+            // This serves two purposes:
+            // 
+            // 1. Ensures the client thread didn't panic
+            // 2. Ensures the client did close the "connection",
+            //    or this line would block forever, because the
+            //    above test server code doesn't.
+            h_client.await.unwrap();
+        }
+        async fn verify_request<S>(mut stream: S, expected: impl AsRef<[u8]>)
+        where
+            S: AsyncRead + Unpin,
+        {
+            let expected = expected.as_ref();
+            let hdr = &mut [0u8; ZBX_HDR_SIZE];
+            stream.read_exact(&mut hdr[..]).await.unwrap();
+            assert_eq!(hdr, &expected[..ZBX_HDR_SIZE]);
+
+            let len_end = ZBX_HEADER + std::mem::size_of::<u32>();
+            let len = u32::from_le_bytes((&hdr[ZBX_HEADER..len_end]).try_into().unwrap());
+
+            let mut body = vec![0u8; len as usize];
+            stream.read_exact(&mut body[..]).await.unwrap();
+            assert_eq!(body, &expected[ZBX_HDR_SIZE..]);
+        }
     }
 }
