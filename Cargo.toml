@@ -1,6 +1,6 @@
 [package]
 name = "zbx_sender"
-version = "0.3.0"
+version = "0.4.0-alpha"
 authors = ["Alexander Andreev <andreevlex.as@gmail.com>"]
 description = "Implementation of Zabbix Sender Client."
 homepage = "https://github.com/ava57r/zbx-sender-rs"

@@ -577,7 +577,9 @@ mod test {
         let h_client = std::thread::spawn(move || {
             let stream = MockStream::connect(&handle).unwrap();
             let sender = Sender::new("test_server", 10051);
-            let response = sender.send_to(("test_host", "test_key", "12345678"), stream).unwrap();
+            let response = sender
+                .send_to(("test_host", "test_key", "12345678"), stream)
+                .unwrap();
             verify_response(&response, 1);
         });
 
@@ -585,12 +587,12 @@ mod test {
         let mut stream = listener.accept().unwrap();
         verify_request(Read::by_ref(&mut stream), &expected_packet);
         let response = json_to_packet(
-            r#"{"response":"success","info":"processed: 1; failed: 0; total: 1; seconds spent: 0.1"}"#
+            r#"{"response":"success","info":"processed: 1; failed: 0; total: 1; seconds spent: 0.1"}"#,
         );
         stream.write_all(&response[..]).unwrap();
 
         // This serves two purposes:
-        // 
+        //
         // 1. Ensures the client thread didn't panic
         // 2. Ensures the client did close the "connection",
         //    or this line would block forever, because the
@@ -612,7 +614,11 @@ mod test {
         let h_client = std::thread::spawn(move || {
             let stream = MockStream::connect(&handle).unwrap();
             let sender = Sender::new("test_server", 10051);
-            let message = vec![("test_host", "test_key", "12345678"), ("test_host", "test_key2", "87654321")].to_message();
+            let message = vec![
+                ("test_host", "test_key", "12345678"),
+                ("test_host", "test_key2", "87654321"),
+            ]
+            .to_message();
             let response = sender.send_to(message, stream).unwrap();
             verify_response(&response, 2);
         });
@@ -621,12 +627,12 @@ mod test {
         let mut stream = listener.accept().unwrap();
         verify_request(Read::by_ref(&mut stream), &expected_packet);
         let response = json_to_packet(
-            r#"{"response":"success","info":"processed: 2; failed: 0; total: 2; seconds spent: 0.1"}"#
+            r#"{"response":"success","info":"processed: 2; failed: 0; total: 2; seconds spent: 0.1"}"#,
         );
         stream.write_all(&response[..]).unwrap();
 
         // This serves two purposes:
-        // 
+        //
         // 1. Ensures the client thread didn't panic
         // 2. Ensures the client did close the "connection",
         //    or this line would block forever, because the
@@ -636,12 +642,9 @@ mod test {
 
     #[cfg(feature = "async_tokio")]
     mod async_tokio {
-        use mock_io::tokio::{
-            MockListener as AsyncMockListener,
-            MockStream as AsyncMockStream
-        };
+        use mock_io::tokio::{MockListener as AsyncMockListener, MockStream as AsyncMockStream};
         use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
-        
+
         use super::*;
 
         #[tokio::test]
@@ -657,21 +660,24 @@ mod test {
             let h_client = tokio::spawn(async move {
                 let stream = AsyncMockStream::connect(&handle).unwrap();
                 let sender = Sender::new("test_server", 10051);
-                let response = sender.send_async_to(("test_host", "test_key", "12345678"), stream).await.unwrap();
+                let response = sender
+                    .send_async_to(("test_host", "test_key", "12345678"), stream)
+                    .await
+                    .unwrap();
                 verify_response(&response, 1);
             });
 
             // Accept just one connection
             let stream = listener.accept().await.unwrap();
-            let (stream_r, mut stream_w) = stream.split(); 
+            let (stream_r, mut stream_w) = stream.split();
             verify_request(stream_r, &expected_packet).await;
             let response = json_to_packet(
-                r#"{"response":"success","info":"processed: 1; failed: 0; total: 1; seconds spent: 0.1"}"#
+                r#"{"response":"success","info":"processed: 1; failed: 0; total: 1; seconds spent: 0.1"}"#,
             );
             stream_w.write_all(&response[..]).await.unwrap();
 
             // This serves two purposes:
-            // 
+            //
             // 1. Ensures the client thread didn't panic
             // 2. Ensures the client did close the "connection",
             //    or this line would block forever, because the
@@ -693,22 +699,26 @@ mod test {
             let h_client = tokio::spawn(async move {
                 let stream = AsyncMockStream::connect(&handle).unwrap();
                 let sender = Sender::new("test_server", 10051);
-                let message = vec![("test_host", "test_key", "12345678"), ("test_host", "test_key2", "87654321")].to_message();
+                let message = vec![
+                    ("test_host", "test_key", "12345678"),
+                    ("test_host", "test_key2", "87654321"),
+                ]
+                .to_message();
                 let response = sender.send_async_to(message, stream).await.unwrap();
                 verify_response(&response, 2);
             });
 
             // Accept just one connection
             let stream = listener.accept().await.unwrap();
-            let (stream_r, mut stream_w) = stream.split(); 
+            let (stream_r, mut stream_w) = stream.split();
             verify_request(stream_r, &expected_packet).await;
             let response = json_to_packet(
-                r#"{"response":"success","info":"processed: 2; failed: 0; total: 2; seconds spent: 0.1"}"#
+                r#"{"response":"success","info":"processed: 2; failed: 0; total: 2; seconds spent: 0.1"}"#,
             );
             stream_w.write_all(&response[..]).await.unwrap();
 
             // This serves two purposes:
-            // 
+            //
             // 1. Ensures the client thread didn't panic
             // 2. Ensures the client did close the "connection",
             //    or this line would block forever, because the
