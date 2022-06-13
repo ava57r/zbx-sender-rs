@@ -1,0 +1,44 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    env:
+      BUILD_FEATURES: ${{ matrix.exclusive-features }} ${{ matrix.blanket-features }}
+
+    strategy:
+      matrix:
+        exclusive-features:
+          - ""
+          - "async_tokio"
+          - "tls_openssl"
+          - "tls_rustls"
+          - "async_tokio tls_openssl tls_openssl_tokio"
+          - "async_tokio tls_rustls tls_rustls_tokio"
+        blanket-features:
+          - ""
+          - "tracing clap"
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+    - uses: Swatinem/rust-cache@v1.4.0
+
+    - name: Build
+      run: cargo build --verbose --features "${{ env.BUILD_FEATURES }}"
+    - name: Run tests
+      run: cargo test --verbose --features "${{ env.BUILD_FEATURES }}"
