@@ -97,6 +97,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Start job services
+        run: cd .github/ci && docker-compose up --detach
+
       - uses: actions/download-artifact@v3
         with:
           name: ${{ env.CI_EXAMPLE_BIN }}-${{ matrix.async }}-${{ matrix.tls }}
@@ -150,32 +153,3 @@ jobs:
             docker logs ${{ job.services.zabbix-server.id }}
             exit 1
           fi
-
-    services:
-      postgres-server:
-        image: postgres:latest
-        env:
-          POSTGRES_USER: zabbix
-          POSTGRES_PASSWORD: ${{ needs.temporary-passwords.outputs.postgres_password }}
-          POSTGRES_DB: zabbix
-      zabbix-frontend:
-        image: zabbix/zabbix-web-nginx-pgsql:latest
-        env:
-          POSTGRES_USER: zabbix
-          POSTGRES_PASSWORD: ${{ needs.temporary-passwords.outputs.postgres_password }}
-          POSTGRES_DB: zabbix
-          PHP_TZ: "Etc/UTC"
-          ZBX_SERVER_HOST: zabbix-server
-        ports:
-          - "8080:8080"
-      zabbix-server:
-        image: zabbix/zabbix-server-pgsql:latest
-        env:
-          POSTGRES_USER: zabbix
-          POSTGRES_PASSWORD: ${{ needs.temporary-passwords.outputs.postgres_password }}
-          POSTGRES_DB: zabbix
-          # Increase the configuration cache update frequency, so API changes get reloaded
-          # as fast as possible
-          ZBX_CACHEUPDATEFREQUENCY: "1"
-        ports:
-          - "10051:10051"

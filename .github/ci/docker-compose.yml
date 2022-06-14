@@ -1,0 +1,33 @@
+version: "2"
+services:
+  postgres-server:
+    image: postgres:latest
+    restart: unless-stopped
+    environment: &postgres-credentials
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: ${PGPASSWORD:?Must specify password}
+      POSTGRES_DB: zabbix
+
+  zabbix-frontend:
+    image: zabbix/zabbix-web-nginx-pgsql:latest
+    restart: unless-stopped
+    # depends_on:
+    #   - postgres-server
+    #   - zabbix-server
+    environment:
+      <<: *postgres-credentials
+      PHP_TZ: "Etc/UTC"
+      ZBX_SERVER_HOST: zabbix-server
+    ports:
+      - "443:8443"
+      - "80:8080"
+
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:latest
+    restart: unless-stopped
+    # depends_on:
+    #   - postgres-server
+    environment:
+      <<: *postgres-credentials
+    ports:
+      - "10051:10051"

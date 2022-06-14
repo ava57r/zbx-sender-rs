@@ -41,6 +41,8 @@ runs:
         # Copy the keys and certificates only
         mkdir artifact
         cp -v $EASYRSA_PKI/ca.* $EASYRSA_PKI/issued/* $EASYRSA_PKI/private/* artifact/
+        # Also generate a PSK
+        openssl rand -hex 32 > artifact/client.psk
       shell: bash
     - name: Upload PKI as artifact
       uses: actions/upload-artifact@v3
