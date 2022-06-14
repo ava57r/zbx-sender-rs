@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CI_EXAMPLE_BIN: clap_sender
 
 jobs:
   temporary-passwords:
@@ -25,7 +26,6 @@ jobs:
 
     env:
       BUILD_FEATURES: "${{ matrix.exclusive-features }} tracing clap"
-      CI_EXAMPLE_BIN: clap_sender
 
     strategy:
       matrix:
@@ -71,15 +71,12 @@ jobs:
       - build
       - temporary-passwords
 
-    env:
-      CI_EXAMPLE_BIN: clap_sender-${{ matrix.async }}-${{ matrix.tls }}
-
     strategy:
       matrix:
         encryption:
           - unencrypted
-          - psk
-          - cert
+          # - psk
+          # - cert
         tls:
           - openssl
           - rustls
@@ -95,22 +92,50 @@ jobs:
 
       - uses: actions/download-artifact@v3
         with:
-          name: ${{ env.CI_EXAMPLE_BIN }}
-
-      - name: DEBUG - WHERE IS THE ARTIFACT
-        run: |
-          ls -lR
+          name: ${{ env.CI_EXAMPLE_BIN }}-${{ matrix.async }}-${{ matrix.tls }}
 
       - name: Make downloaded artifact executable
         run: chmod a+x ${{ env.CI_EXAMPLE_BIN }}
 
-      - name: DEBUG - Check if binary runs
-        run: |
-          echo "--tls-connect ${{ matrix.encryption }}"
-          ./${{ env.CI_EXAMPLE_BIN }} --help
-
       - name: Call Zabbix API to create test Host and Items
         run: ./script/zabbix_api_setup.py --wait 120 http://localhost:8080
+
+      - name: Call Zabbix Server to reload the config cache
+        run: |
+          ZABBIX_CONTAINERID=$(/usr/bin/docker ps --all --filter label=ci.service=zabbix-server --filter status=running --no-trunc --format "{{.ID}}")
+          docker exec $ZABBIX_CONTAINERID zabbix_server --runtime-control log_level_increase=trapper
+          timeout 60 bash -c -- "while true; do docker exec $ZABBIX_CONTAINERID zabbix_server --runtime-control config_cache_reload 2>&1 | grep -q 'Runtime control command was forwarded successfully' && break; sleep 1; done"
+          # Wait for the config cache to actually reload
+          sleep 5
+
+      - name: Test item creation
+        run: |
+          set +e
+          ./${{ env.CI_EXAMPLE_BIN }} --status-on-fail --zabbix-server localhost --input-file - <<EOF
+          "CI test host" ci.test.character "Hello, world."
+          "CI test host" ci.test.unsigned 54321
+          "CI test host" ci.test.float 54.321
+          "CI test host" ci.test.text "I have eaten
+          the plums
+          that were in
+          the icebox
+
+          and which
+          you were probably
+          saving
+          for breakfast
+
+          Forgive me
+          they were delicious
+          so sweet
+          and so cold"
+          EOF
+          if [ $? -ne 0 ]; then
+            ZABBIX_CONTAINERID=$(/usr/bin/docker ps --all --filter label=ci.service=zabbix-server --filter status=running --no-trunc --format "{{.ID}}")
+            printf '\n\nzabbix-server container logs:\n\n'
+            docker logs $ZABBIX_CONTAINERID
+            exit 1
+          fi
 
     services:
       postgres-server:
@@ -135,5 +160,9 @@ jobs:
           POSTGRES_USER: zabbix
           POSTGRES_PASSWORD: ${{ needs.temporary-passwords.outputs.postgres_password }}
           POSTGRES_DB: zabbix
+          # Increase the configuration cache update frequency, so API changes get reloaded
+          # as fast as possible
+          ZBX_CACHEUPDATEFREQUENCY: "1"
         ports:
           - "10051:10051"
+        options: "--label ci.service=zabbix-server"

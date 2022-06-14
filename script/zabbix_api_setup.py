@@ -163,7 +163,8 @@ def main():
                     'name': item_name,
                     'key_': item_key,
                     'type': 2,  # Zabbix trapper
-                    'value_type': item_valuetype_id
+                    'value_type': item_valuetype_id,
+                    'trapper_hosts': '127.0.0.1, ::1'  # IPv4/6 localhost
                 },
                 identifier='itemid'
             )
