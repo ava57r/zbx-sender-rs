@@ -58,6 +58,9 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+      - uses: Swatinem/rust-cache@v1.4.0
+        with:
+          key: example-${{ env.CI_EXAMPLE_BIN }}
 
       - name: Build example for CI integration tests
         run: cargo build --verbose --features "${{ env.BUILD_FEATURES }}" --example ${{ env.CI_EXAMPLE_BIN }}
