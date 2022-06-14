@@ -124,6 +124,11 @@ def wait_for_api(zabbix, timeout, report_interval=10):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wait', type=int)
+    parser.add_argument(
+        '--allow-ips',
+        help="Allowed IP ranges for Zabbix Trapper items",
+        default='127.0.0.1, ::1'
+    )
     parser.add_argument('zabbix_url')
     args = parser.parse_args()
 
@@ -164,7 +169,7 @@ def main():
                     'key_': item_key,
                     'type': 2,  # Zabbix trapper
                     'value_type': item_valuetype_id,
-                    'trapper_hosts': '127.0.0.1, ::1'  # IPv4/6 localhost
+                    'trapper_hosts': args.allow_ips,  # IPv4/6 all hosts
                 },
                 identifier='itemid'
             )

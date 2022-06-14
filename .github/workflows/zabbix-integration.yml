@@ -98,19 +98,25 @@ jobs:
         run: chmod a+x ${{ env.CI_EXAMPLE_BIN }}
 
       - name: Call Zabbix API to create test Host and Items
-        run: ./script/zabbix_api_setup.py --wait 120 http://localhost:8080
+        # Allow Docker private subnets, in addition to localhost
+        run: ./script/zabbix_api_setup.py --wait 120 --allow-ips '127.0.0.1, ::1, 172.16.0.0/12' http://localhost:8080
 
-      - name: Call Zabbix Server to reload the config cache
+      - name: Reload the Zabbix Server configuration cache
         run: |
-          ZABBIX_CONTAINERID=$(/usr/bin/docker ps --all --filter label=ci.service=zabbix-server --filter status=running --no-trunc --format "{{.ID}}")
-          docker exec $ZABBIX_CONTAINERID zabbix_server --runtime-control log_level_increase=trapper
-          timeout 60 bash -c -- "while true; do docker exec $ZABBIX_CONTAINERID zabbix_server --runtime-control config_cache_reload 2>&1 | grep -q 'Runtime control command was forwarded successfully' && break; sleep 1; done"
+          # Get the container ID of the running Zabbix Server
+          timeout 60 bash -c -- "while true; do docker exec ${{ job.services.zabbix-server.id }} zabbix_server --runtime-control config_cache_reload 2>&1 | grep 'Runtime control command was forwarded successfully' && break; sleep 1; done"
           # Wait for the config cache to actually reload
           sleep 5
 
       - name: Test item creation
         run: |
+          # Don't exit on error; errors are handled at the end
           set +e
+
+          # Increase the log level of Zabbix Server Trapper processes, to get useful information in case of error
+          docker exec ${{ job.services.zabbix-server.id }} zabbix_server --runtime-control log_level_increase=trapper
+
+          # Call ${{ env.CI_EXAMPLE_BIN }} to send some items to Zabbix Server
           ./${{ env.CI_EXAMPLE_BIN }} --status-on-fail --zabbix-server localhost --input-file - <<EOF
           "CI test host" ci.test.character "Hello, world."
           "CI test host" ci.test.unsigned 54321
@@ -130,10 +136,11 @@ jobs:
           so sweet
           and so cold"
           EOF
+
+          # If ${{ env.CI_EXAMPLE_BIN }} exited with an error, print the Zabbix Server logs
           if [ $? -ne 0 ]; then
-            ZABBIX_CONTAINERID=$(/usr/bin/docker ps --all --filter label=ci.service=zabbix-server --filter status=running --no-trunc --format "{{.ID}}")
             printf '\n\nzabbix-server container logs:\n\n'
-            docker logs $ZABBIX_CONTAINERID
+            docker logs ${{ job.services.zabbix-server.id }}
             exit 1
           fi
 
@@ -165,4 +172,3 @@ jobs:
           ZBX_CACHEUPDATEFREQUENCY: "1"
         ports:
           - "10051:10051"
-        options: "--label ci.service=zabbix-server"
