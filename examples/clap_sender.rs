@@ -123,11 +123,11 @@ fn main() -> Result<(), anyhow::Error> {
         if args.fail {
             let n_failed = response.failed_cnt().ok_or_else(|| anyhow!("Could not parse failed items count"))?;
             if n_failed > 0 {
-                bail!("Error: {} items failed", n_failed);
+                bail!("{} items failed", n_failed);
             }
         }
         Ok(())
     } else {
-        Err(anyhow!("Error: {:?}", response))
+        Err(anyhow!("{:?}", response))
     }
 }
