@@ -37,6 +37,10 @@ struct Cli {
     #[clap(short, long, requires = "host", requires = "value")]
     key: Option<String>,
 
+    /// Specify to exit with an error status if any items failed to be processed by Zabbix.
+    #[clap(short = 'f', long = "status-on-fail")]
+    fail: bool,
+
     /// Item value
     #[clap(short = 'o', long, requires = "host", requires = "key")]
     value: Option<String>,
@@ -116,6 +120,12 @@ fn main() -> Result<(), anyhow::Error> {
 
     if response.success() {
         println!("{:?}", response);
+        if args.fail {
+            let n_failed = response.failed_cnt().ok_or_else(|| anyhow!("Could not parse failed items count"))?;
+            if n_failed > 0 {
+                bail!("Error: {} items failed", n_failed);
+            }
+        }
         Ok(())
     } else {
         Err(anyhow!("Error: {:?}", response))
