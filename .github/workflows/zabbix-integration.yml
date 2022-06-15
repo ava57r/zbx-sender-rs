@@ -125,11 +125,17 @@ jobs:
       - name: Call Zabbix API to create test Host and Items
         # Allow Docker private subnets, in addition to localhost
         run: |
+          PSK_ARGS=""
+          if [ '${{ matrix.encryption }}' = 'psk' ]; then
+            PSK_ARGS="--tls-psk-identity ${{ env.CI_EXAMPLE_BIN }} --tls-psk-key $(cat pki/client.psk)"
+          fi
+
+          set -x
           ./script/zabbix_api_setup.py \
             --wait 120 \
             --allow-ips '127.0.0.1, ::1, 172.16.0.0/12' \
-            --psk-identity '${{ env.CI_EXAMPLE_BIN }}' \
-            --psk-key "$(cat pki/client.psk)" \
+            --tls-accept ${{ matrix.encryption }} \
+            $PSK_ARGS \
             http://localhost:8080
 
       - name: Get Zabbix Server logs

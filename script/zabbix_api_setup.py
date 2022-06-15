@@ -135,21 +135,32 @@ def main():
         default='127.0.0.1, ::1'
     )
     parser.add_argument(
-        '--psk-identity',
+        '--tls-psk-identity',
         help="Allowed TLS PSK identity string for the test host"
     )
     parser.add_argument(
-        '--psk-key',
+        '--tls-psk-key',
         help="TLS PSK (pre-shared key) for the test host"
+    )
+    parser.add_argument(
+        '--tls-accept',
+        help="Which TLS modes should the server accept",
+        choices=['unencrypted', 'psk', 'cert'],
+        action='append'
     )
     parser.add_argument('zabbix_url')
     args = parser.parse_args()
 
-    if (args.psk_identity is not None) ^ (args.psk_key is not None):
-        parser.error("--psk-identity and --psk-key must be specified together")
-
-    if args.psk_key is not None and len(args.psk_key) < 32:
-        parser.error("--psk-key must be at least 32 hex digits")
+    if 'psk' in args.tls_accept:
+        if (args.tls_psk_identity is None) or (args.tls_psk_key is None):
+            parser.error("--psk-identity and --psk-key must both"
+                         " be specified when using --tls-accept psk")
+        if len(args.tls_psk_key) < 32:
+            parser.error("--psk-key must be at least 32 hex digits")
+    else:
+        if args.tls_psk_identity is not None or args.tls_psk_key is not None:
+            parser.error("--psk-identity and --psk-key can only"
+                         " be specified when using --tls-accept psk")
 
     zabbix = Zabbix(args.zabbix_url)
     try:
@@ -168,15 +179,27 @@ def main():
             'host': ZABBIX_HOST_NAME,
             'groups': [{'groupid': group_id}]
         }
-        if args.psk_identity is not None and args.psk_key is not None:
+        mode_values = {
+            'unencrypted': 1,
+            'psk': 2,
+            'cert': 4
+        }
+
+        if args.tls_accept is None:
+            args.tls_accept = ['unencrypted']
+        tls_accept_value = 0
+        for mode in args.tls_accept:
+            tls_accept_value += mode_values[mode]
+        host.update(tls_accept=tls_accept_value)
+
+        if (
+            'psk' in args.tls_accept
+            and args.tls_psk_identity is not None
+            and args.tls_psk_key is not None
+        ):
             host.update({
-                'tls_accept': 7,  # No encryption + PSK + certificate
-                'tls_psk_identity': args.psk_identity,
-                'tls_psk': args.psk_key
-            })
-        else:
-            host.update({
-                'tls_accept': 5,  # No encryption + certificate
+                'tls_psk_identity': args.tls_psk_identity,
+                'tls_psk': args.tls_psk_key
             })
 
         host_id = call_with_status(
