@@ -10,7 +10,7 @@ use anyhow::{anyhow, bail};
 use clap::Parser;
 
 use csv::ReaderBuilder;
-use zbx_sender::Sender;
+use zbx_sender::{Sender, ToMessage, Response};
 
 #[cfg(feature = "_tls_common")]
 use {
@@ -79,6 +79,23 @@ fn records_from_input<R: Read>(mut reader: csv::Reader<R>) -> csv::Result<Vec<cs
     Ok(records)
 }
 
+fn send_wrapper(sender: &Sender, message: impl ToMessage) -> zbx_sender::Result<Response> {
+    #[cfg(not(feature = "async_tokio"))]
+    let result = sender.send(message);
+
+    // This is not the idiomatic way to run this function. See the documentation for send_async.
+    // This is done this way to simplify the code in main(), rather than have both a sync and async
+    // version.
+    #[cfg(feature = "async_tokio")]
+    let result = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap()
+        .block_on(sender.send_async(message));
+
+    result
+}
+
 fn main() -> Result<(), anyhow::Error> {
     let args = Cli::parse();
     let sender = Sender::new(args.server.to_owned(), args.port);
@@ -107,9 +124,9 @@ fn main() -> Result<(), anyhow::Error> {
         let items: Vec<(&str, &str, &str)> = records.iter()
             .map(|item| (&item[0], &item[1], &item[2])).collect();
 
-        sender.send(items)?
+        send_wrapper(&sender, items)?
     } else if let Some(host) = args.host {
-        sender.send((
+        send_wrapper(&sender, (
             host.as_str(),
             args.key.expect("Guaranteed by Cli").as_str(),
             args.value.expect("Guaranteed by Cli").as_str()
