@@ -107,26 +107,13 @@ jobs:
           name: cert-pki
           path: pki
 
-      - name: "Start job services (encryption: unencrypted)"
-        run: cd .github/ci && docker-compose up --detach
-        if: ${{ matrix.encryption == 'unencrypted' }}
-
-      - name: "Start job services (encryption: psk)"
-        run: cd .github/ci && docker-compose up --detach
-        env:
-          ZBX_ENC_VOLPATH: "${{ github.workspace }}/pki"
-          ZBX_TLSPSKIDENTITY: "${{ env.CI_EXAMPLE_BIN }}"
-          ZBX_TLSPSKFILE: "client.psk"
-        if: ${{ matrix.encryption == 'psk' }}
-
-      - name: "Start job services (encryption: cert)"
+      - name: "Start job services"
         run: cd .github/ci && docker-compose up --detach
         env:
           ZBX_ENC_VOLPATH: "${{ github.workspace }}/pki"
           ZBX_TLSCAFILE: "ca.crt"
           ZBX_TLSCERTFILE: "localhost.crt"
           ZBX_TLSKEYFILE: "localhost.key"
-        if: ${{ matrix.encryption == 'cert' }}
 
       - uses: actions/download-artifact@v3
         with:
@@ -137,10 +124,13 @@ jobs:
 
       - name: Call Zabbix API to create test Host and Items
         # Allow Docker private subnets, in addition to localhost
-        run: ./script/zabbix_api_setup.py --wait 120 --allow-ips '127.0.0.1, ::1, 172.16.0.0/12' http://localhost:8080
-
-      - name: DEBUG list pki directory
-        run: cd .github/ci && docker-compose exec -T zabbix-server ls -lR /var/lib/zabbix/enc
+        run: |
+          ./script/zabbix_api_setup.py \
+            --wait 120 \
+            --allow-ips '127.0.0.1, ::1, 172.16.0.0/12' \
+            --psk-identity '${{ env.CI_EXAMPLE_BIN }}' \
+            --psk-key "$(cat pki/client.psk)" \
+            http://localhost:8080
 
       - name: Get Zabbix Server logs
         run: cd .github/ci && docker-compose logs zabbix-server

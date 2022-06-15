@@ -123,14 +123,33 @@ def wait_for_api(zabbix, timeout, report_interval=10):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--wait', type=int)
+    parser.add_argument(
+            '--wait',
+            type=int,
+            help="Wait up to this many seconds for Zabbix to be available",
+            metavar="SECONDS"
+    )
     parser.add_argument(
         '--allow-ips',
-        help="Allowed IP ranges for Zabbix Trapper items",
+        help="Allowed IPs (hostname, IPs, or CIDRs) for Zabbix Trapper items",
         default='127.0.0.1, ::1'
+    )
+    parser.add_argument(
+        '--psk-identity',
+        help="Allowed TLS PSK identity string for the test host"
+    )
+    parser.add_argument(
+        '--psk-key',
+        help="TLS PSK (pre-shared key) for the test host"
     )
     parser.add_argument('zabbix_url')
     args = parser.parse_args()
+
+    if (args.psk_identity is not None) ^ (args.psk_key is not None):
+        parser.error("--psk-identity and --psk-key must be specified together")
+
+    if args.psk_key is not None and len(args.psk_key) < 32:
+        parser.error("--psk-key must be at least 32 hex digits")
 
     zabbix = Zabbix(args.zabbix_url)
     try:
@@ -145,13 +164,25 @@ def main():
             'hostgroup.create', {'name': ZABBIX_HOSTGROUP},
             identifier='groupid'
         )
+        host = {
+            'host': ZABBIX_HOST_NAME,
+            'groups': [{'groupid': group_id}]
+        }
+        if args.psk_identity is not None and args.psk_key is not None:
+            host.update({
+                'tls_accept': 7,  # No encryption + PSK + certificate
+                'tls_psk_identity': args.psk_identity,
+                'tls_psk': args.psk_key
+            })
+        else:
+            host.update({
+                'tls_accept': 5,  # No encryption + certificate
+            })
+
         host_id = call_with_status(
             zabbix,
             f"Creating Host \"{ZABBIX_HOST_NAME}\"",
-            'host.create', {
-                'host': ZABBIX_HOST_NAME,
-                'groups': [{'groupid': group_id}]
-            },
+            'host.create', host,
             identifier='hostid'
         )
 
