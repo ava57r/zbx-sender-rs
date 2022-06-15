@@ -79,11 +79,12 @@ jobs:
       - temporary-credentials
 
     strategy:
+      fail-fast: false
       matrix:
         encryption:
           - unencrypted
-          # - psk
-          # - cert
+          - psk
+          - cert
         tls:
           - openssl
           - rustls
@@ -94,11 +95,38 @@ jobs:
           - encryption: psk
             tls: rustls
 
+    env:
+      PGPASSWORD: "${{ needs.temporary-credentials.outputs.postgres_password }}"
+
     steps:
       - uses: actions/checkout@v3
 
-      - name: Start job services
+      - name: Download mTLS PKI
+        uses: actions/download-artifact@v3
+        with:
+          name: cert-pki
+          path: pki
+
+      - name: "Start job services (encryption: unencrypted)"
         run: cd .github/ci && docker-compose up --detach
+        if: ${{ matrix.encryption == 'unencrypted' }}
+
+      - name: "Start job services (encryption: psk)"
+        run: cd .github/ci && docker-compose up --detach
+        env:
+          ZBX_ENC_VOLPATH: "${{ github.workspace }}/pki"
+          ZBX_TLSPSKIDENTITY: "${{ env.CI_EXAMPLE_BIN }}"
+          ZBX_TLSPSKFILE: "client.psk"
+        if: ${{ matrix.encryption == 'psk' }}
+
+      - name: "Start job services (encryption: cert)"
+        run: cd .github/ci && docker-compose up --detach
+        env:
+          ZBX_ENC_VOLPATH: "${{ github.workspace }}/pki"
+          ZBX_TLSCAFILE: "ca.crt"
+          ZBX_TLSCERTFILE: "localhost.crt"
+          ZBX_TLSKEYFILE: "localhost.key"
+        if: ${{ matrix.encryption == 'cert' }}
 
       - uses: actions/download-artifact@v3
         with:
@@ -111,10 +139,25 @@ jobs:
         # Allow Docker private subnets, in addition to localhost
         run: ./script/zabbix_api_setup.py --wait 120 --allow-ips '127.0.0.1, ::1, 172.16.0.0/12' http://localhost:8080
 
+      - name: DEBUG list pki directory
+        run: cd .github/ci && docker-compose exec -T zabbix-server ls -lR /var/lib/zabbix/enc
+
+      - name: Get Zabbix Server logs
+        run: cd .github/ci && docker-compose logs zabbix-server
+
       - name: Reload the Zabbix Server configuration cache
         run: |
           # Get the container ID of the running Zabbix Server
-          timeout 60 bash -c -- "while true; do docker exec ${{ job.services.zabbix-server.id }} zabbix_server --runtime-control config_cache_reload 2>&1 | grep 'Runtime control command was forwarded successfully' && break; sleep 1; done"
+          timeout 60 bash -c -- '
+            cd .github/ci
+            while true
+            do
+              COMPOSE_OUT="$(docker-compose exec -T zabbix-server zabbix_server --runtime-control config_cache_reload 2>&1)"
+              echo "$COMPOSE_OUT"
+              echo "$COMPOSE_OUT" | grep -q "Runtime control command was forwarded successfully" && break
+              sleep 1
+            done
+          '
           # Wait for the config cache to actually reload
           sleep 5
 
@@ -124,10 +167,20 @@ jobs:
           set +e
 
           # Increase the log level of Zabbix Server Trapper processes, to get useful information in case of error
-          docker exec ${{ job.services.zabbix-server.id }} zabbix_server --runtime-control log_level_increase=trapper
+          (cd .github/ci && docker-compose exec -T zabbix-server zabbix_server --runtime-control log_level_increase=trapper)
 
+          # Configure TLS command line options
+          case '${{ matrix.encryption }}' in
+            unencrypted)
+              TLS_OPTS="";;
+            psk)
+              TLS_OPTS="--tls-connect psk --tls-psk-identity ${{ env.CI_EXAMPLE_BIN }} --tls-psk-file $PWD/pki/client.psk";;
+            cert)
+              TLS_OPTS="--tls-connect cert --tls-ca-file $PWD/pki/ca.crt --tls-cert-file $PWD/pki/client.crt --tls-key-file $PWD/pki/client.key";;
+            *) echo "Unsupported encryption type"; exit 1;;
+          esac
           # Call ${{ env.CI_EXAMPLE_BIN }} to send some items to Zabbix Server
-          ./${{ env.CI_EXAMPLE_BIN }} --status-on-fail --zabbix-server localhost --input-file - <<EOF
+          ./${{ env.CI_EXAMPLE_BIN }} --status-on-fail --zabbix-server localhost $TLS_OPTS --input-file - <<EOF
           "CI test host" ci.test.character "Hello, world."
           "CI test host" ci.test.unsigned 54321
           "CI test host" ci.test.float 54.321
@@ -150,6 +203,6 @@ jobs:
           # If ${{ env.CI_EXAMPLE_BIN }} exited with an error, print the Zabbix Server logs
           if [ $? -ne 0 ]; then
             printf '\n\nzabbix-server container logs:\n\n'
-            docker logs ${{ job.services.zabbix-server.id }}
+            (cd .github/ci && docker-compose logs zabbix-server)
             exit 1
           fi
