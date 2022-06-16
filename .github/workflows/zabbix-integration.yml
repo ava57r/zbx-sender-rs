@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - master
-      # TODO: push.branches.ci for testing only
-      - ci
   pull_request:
     branches:
       - master
