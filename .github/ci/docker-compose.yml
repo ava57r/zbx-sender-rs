@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment: &postgres-credentials
       POSTGRES_USER: "${PGUSER:-zabbix}"
-      POSTGRES_PASSWORD: "${PGPASSWORD:?Must specify PostgreSQL password as PGPASSWORD}"
+      POSTGRES_PASSWORD: "${PGPASSWORD:-zabbix}"
       POSTGRES_DB: "${PGDATABASE:-zabbix}"
 
   zabbix-frontend:

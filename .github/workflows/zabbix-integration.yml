@@ -28,43 +28,36 @@ jobs:
         with:
           pki-name: cert-pki
 
-  build:
+  build-and-unit-tests:
     runs-on: ubuntu-latest
 
     env:
-      BUILD_FEATURES: "${{ matrix.exclusive-features }} ${{ matrix.blanket-features }}"
+      BUILD_FEATURES: "${{ matrix.async }} ${{ matrix.tls }} ${{ matrix.async-tls }} ${{ matrix.tracing }} ${{ matrix.clap }}"
 
     strategy:
+      # The matrix builds and runs unit tests for all possible combinations of features.
       matrix:
         tls:
-          - none
-          - openssl
-          - rustls
+          - null
+          - tls_openssl
+          - tls_rustls
         async:
-          - blocking
-          - tokio
-        blanket-features:
-          - ""
-          - "tracing clap"
+          - null
+          - async_tokio
+        tracing:
+          - null
+          - tracing
+        clap:
+          - null
+          - clap
+        # Add required async tls features when using async_tokio
         include:
-          - async: blocking
-            tls: none
-            exclusive-features: ""
-          - async: blocking
-            tls: openssl
-            exclusive-features: tls_openssl
-          - async: blocking
-            tls: rustls
-            exclusive-features: tls_rustls
-          - async: tokio
-            tls: none
-            exclusive-features: async_tokio
-          - async: tokio
-            tls: openssl
-            exclusive-features: "async_tokio tls_openssl tls_openssl_tokio"
-          - async: tokio
-            tls: rustls
-            exclusive-features: "async_tokio tls_rustls tls_rustls_tokio"
+          - async: async_tokio
+            tls: tls_openssl
+            async-tls: tls_openssl_tokio
+          - async: async_tokio
+            tls: tls_rustls
+            async-tls: tls_rustls_tokio
     steps:
       - uses: actions/checkout@v3
 
@@ -73,6 +66,9 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v1.4.0
 
+      # cargo test also builds all examples (that are compatible with the features),
+      # so we can run unit tests *and* get the example binary needed for integration
+      # testing in the `test` job.
       - name: Run unit tests and build examples
         run: cargo test --verbose --features "${{ env.BUILD_FEATURES }}"
 
@@ -80,35 +76,40 @@ jobs:
         with:
           name: ${{ env.CI_EXAMPLE_BIN }}-${{ matrix.async }}-${{ matrix.tls }}
           path: target/debug/examples/${{ env.CI_EXAMPLE_BIN }}
-        if: ${{ contains(env.BUILD_FEATURES, 'clap') }}
+        # Only upload the builds with both clap and tracing enabled.
+        # clap_sender only gets built with clap enabled, anyway.
+        if: ${{ matrix.clap == 'clap' && matrix.tracing == 'tracing' }}
 
 
   test:
     runs-on: ubuntu-latest
 
     needs:
-      - build
+      - build-and-unit-tests
       - temporary-credentials
 
     strategy:
+      # Test all possible configurations, even if one fails,
+      # to give more context to failures.
       fail-fast: false
       matrix:
         encryption:
+          # The encryption mode that the example binary is called with
           - unencrypted
           - psk
           - cert
         tls:
-          - openssl
-          - rustls
+          # The cargo feature corresponding to the TLS library under test
+          - tls_openssl
+          - tls_rustls
         async:
-          - blocking
-          - tokio
+          # The cargo feature determining which (if any) async library is available
+          - null
+          - async_tokio
         exclude:
+          # rustls doesn't support PSK
           - encryption: psk
-            tls: rustls
-
-    env:
-      PGPASSWORD: "${{ needs.temporary-credentials.outputs.postgres_password }}"
+            tls: tls_rustls
 
     steps:
       - uses: actions/checkout@v3
@@ -119,15 +120,17 @@ jobs:
           name: cert-pki
           path: pki
 
-      - name: "Start job services"
+      - name: Start job services
         run: cd .github/ci && docker-compose up --detach
         env:
+          PGPASSWORD: "${{ needs.temporary-credentials.outputs.postgres_password }}"
           ZBX_ENC_VOLPATH: "${{ github.workspace }}/pki"
           ZBX_TLSCAFILE: "ca.crt"
           ZBX_TLSCERTFILE: "localhost.crt"
           ZBX_TLSKEYFILE: "localhost.key"
 
-      - uses: actions/download-artifact@v3
+      - name: Download ${{ env.CI_EXAMPLE_BIN }} binary artifact for integration test
+        uses: actions/download-artifact@v3
         with:
           name: ${{ env.CI_EXAMPLE_BIN }}-${{ matrix.async }}-${{ matrix.tls }}
 
@@ -137,11 +140,11 @@ jobs:
       - name: Call Zabbix API to create test Host and Items
         # Allow Docker private subnets, in addition to localhost
         run: |
-          PSK_ARGS=""
-          if [ '${{ matrix.encryption }}' = 'psk' ]; then
-            PSK_ARGS="--tls-psk-identity ${{ env.CI_EXAMPLE_BIN }} --tls-psk-key $(cat pki/client.psk)"
-          fi
+          [ '${{ matrix.encryption }}' = 'psk' ] \
+            && PSK_ARGS="--tls-psk-identity ${{ env.CI_EXAMPLE_BIN }} --tls-psk-key $(cat pki/client.psk)" \
+            || PSK_ARGS=""
 
+          # Print the actual command as it is run, for debugging purposes
           set -x
           ./script/zabbix_api_setup.py \
             --wait 120 \
@@ -155,21 +158,33 @@ jobs:
 
       - name: Reload the Zabbix Server configuration cache
         run: |
+          # GitHub's Runner does this already, but making it explicit,
+          # because this script relies on early exit on error
+          set -e
+
           # Get the container ID of the running Zabbix Server
+          # Timeout after 60 seconds if not successful
           timeout 60 bash -c -- '
             cd .github/ci
             while true
             do
+              # Capture the output of docker-compose to check for success
               COMPOSE_OUT="$(docker-compose exec -T zabbix-server zabbix_server --runtime-control config_cache_reload 2>&1)"
+
+              # Display the full output
               echo "$COMPOSE_OUT"
+
+              # Test for a success message and exit the loop if it is found
               echo "$COMPOSE_OUT" | grep -q "Runtime control command was forwarded successfully" && break
+
+              # Wait one second before retrying
               sleep 1
             done
           '
           # Wait for the config cache to actually reload
           sleep 5
 
-      - name: Test item creation
+      - name: Test zbx_sender communication with Zabbix Server
         run: |
           # Don't exit on error; errors are handled at the end
           set +e
