@@ -111,6 +111,13 @@ jobs:
           - encryption: psk
             tls: tls_rustls
 
+    env:
+      # Used by API setup step and final test step
+      ZBX_TEST_HOSTGROUP: CI test hosts
+      ZBX_TEST_HOST_NAME: CI test host
+      ZBX_TEST_ITEM_NAME_PREFIX: CI test item
+      ZBX_TEST_ITEM_KEY_PREFIX: ci.test
+
     steps:
       - uses: actions/checkout@v3
 
@@ -139,6 +146,9 @@ jobs:
 
       - name: Call Zabbix API to create test Host and Items
         # Allow Docker private subnets, in addition to localhost
+        env:
+          ZBX_USER: Admin
+          ZBX_PASSWORD: zabbix
         run: |
           [ '${{ matrix.encryption }}' = 'psk' ] \
             && PSK_ARGS="--tls-psk-identity ${{ env.CI_EXAMPLE_BIN }} --tls-psk-key $(cat pki/client.psk)" \
@@ -204,10 +214,10 @@ jobs:
           esac
           # Call ${{ env.CI_EXAMPLE_BIN }} to send some items to Zabbix Server
           ./${{ env.CI_EXAMPLE_BIN }} --status-on-fail --zabbix-server localhost $TLS_OPTS --input-file - <<EOF
-          "CI test host" ci.test.character "Hello, world."
-          "CI test host" ci.test.unsigned 54321
-          "CI test host" ci.test.float 54.321
-          "CI test host" ci.test.text "I have eaten
+          "$ZBX_TEST_HOST_NAME" $ZBX_TEST_ITEM_KEY_PREFIX.character "Hello, world."
+          "$ZBX_TEST_HOST_NAME" $ZBX_TEST_ITEM_KEY_PREFIX.unsigned 54321
+          "$ZBX_TEST_HOST_NAME" $ZBX_TEST_ITEM_KEY_PREFIX.float 54.321
+          "$ZBX_TEST_HOST_NAME" $ZBX_TEST_ITEM_KEY_PREFIX.text "I have eaten
           the plums
           that were in
           the icebox

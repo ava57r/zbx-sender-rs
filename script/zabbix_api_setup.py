@@ -2,18 +2,19 @@
 
 import argparse
 import json
+import os
 import time
 from sys import exit
 import urllib.request as rq
 from urllib.parse import urljoin
 
 
-ZABBIX_USER = "Admin"
-ZABBIX_PASSWORD = "zabbix"
-ZABBIX_HOSTGROUP = "CI test hosts"
-ZABBIX_HOST_NAME = "CI test host"
-ZABBIX_ITEM_NAME_PREFIX = "CI test item"
-ZABBIX_ITEM_KEY_PREFIX = "ci.test"
+ZABBIX_USER = os.environ.get('ZBX_USER', "Admin")
+ZABBIX_PASSWORD = os.environ.get('ZBX_PASSWORD', "zabbix")
+ZABBIX_HOSTGROUP = os.environ.get('ZBX_TEST_HOSTGROUP', "Test hosts")
+ZABBIX_HOST_NAME = os.environ.get('ZBX_TEST_HOST_NAME', "Test host")
+ZABBIX_ITEM_NAME_PREFIX = os.environ.get('ZBX_TEST_ITEM_NAME_PREFIX', "Test")
+ZABBIX_ITEM_KEY_PREFIX = os.environ.get('ZBX_TEST_ITEM_KEY_PREFIX', "test")
 
 
 class ZabbixError(Exception):
