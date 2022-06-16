@@ -1,10 +1,13 @@
 name: zabbix-integration
 on:
-  # TODO: push for testing only
   push:
     branches:
+      - master
+      # TODO: push.branches.ci for testing only
       - ci
-  workflow_dispatch:
+  pull_request:
+    branches:
+      - master
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,23 +32,33 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      BUILD_FEATURES: "${{ matrix.exclusive-features }} tracing clap"
+      BUILD_FEATURES: "${{ matrix.exclusive-features }} ${{ matrix.blanket-features }}"
 
     strategy:
       matrix:
         tls:
+          - none
           - openssl
           - rustls
         async:
           - blocking
           - tokio
+        blanket-features:
+          - ""
+          - "tracing clap"
         include:
+          - async: blocking
+            tls: none
+            exclusive-features: ""
           - async: blocking
             tls: openssl
             exclusive-features: tls_openssl
           - async: blocking
             tls: rustls
             exclusive-features: tls_rustls
+          - async: tokio
+            tls: none
+            exclusive-features: async_tokio
           - async: tokio
             tls: openssl
             exclusive-features: "async_tokio tls_openssl tls_openssl_tokio"
@@ -59,16 +72,15 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v1.4.0
-        with:
-          key: example-${{ env.CI_EXAMPLE_BIN }}
 
-      - name: Build example for CI integration tests
-        run: cargo build --verbose --features "${{ env.BUILD_FEATURES }}" --example ${{ env.CI_EXAMPLE_BIN }}
+      - name: Run unit tests and build examples
+        run: cargo test --verbose --features "${{ env.BUILD_FEATURES }}"
 
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ env.CI_EXAMPLE_BIN }}-${{ matrix.async }}-${{ matrix.tls }}
           path: target/debug/examples/${{ env.CI_EXAMPLE_BIN }}
+        if: ${{ contains(env.BUILD_FEATURES, 'clap') }}
 
 
   test:
