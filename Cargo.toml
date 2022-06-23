@@ -1,6 +1,6 @@
 [package]
 name = "zbx_sender"
-version = "0.4.0-alpha"
+version = "0.4.1-alpha"
 authors = ["Alexander Andreev <andreevlex.as@gmail.com>"]
 description = "Implementation of Zabbix Sender Client."
 homepage = "https://github.com/ava57r/zbx-sender-rs"
@@ -66,3 +66,9 @@ required-features = ["_tls_common", "clap"]
 [[example]]
 name = "tls_sender_async"
 required-features = ["_tls_common", "clap", "async_tokio"]
+
+[[example]]
+name = "sender"
+
+[[example]]
+name = "bulk_sender"
