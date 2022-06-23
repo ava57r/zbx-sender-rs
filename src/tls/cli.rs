@@ -60,7 +60,6 @@ impl ClapArgs {
         "tls-cert-file",
         "tls-key-file",
         "tls-ca-file",
-        "tls-crl-file",
         "tls-server-cert-issuer",
         "tls-server-cert-subject",
     ];

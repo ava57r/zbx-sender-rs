@@ -1,0 +1,20 @@
+name: 'Generate random password'
+description: >-
+  Generate a random password of the given length,
+  using characters that are shell-safe
+  (and generally, quote-escape safe)
+inputs:
+  length:
+    description: 'Length of generated password'
+    required: true
+    default: '8'
+outputs:
+  password:
+    description: 'The generated password'
+    value: ${{ steps.generate-password.outputs.password }}
+runs:
+  using: "composite"
+  steps:
+    - id: generate-password
+      run: echo "::set-output name=password::$(openssl rand -base64 ${{ inputs.length }})"
+      shell: bash

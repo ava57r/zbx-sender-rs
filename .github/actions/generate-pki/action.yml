@@ -1,0 +1,51 @@
+name: 'Generate mTLS PKI with self-signed CA'
+description: >-
+  Use the easy-rsa tool to generate a mTLS PKI that can do both
+  client and server certificate authentication.
+inputs:
+  pki-name:
+    description: 'Name to be used to access these PKI files as an Artifact'
+    required: true
+  server:
+    description: 'Fully-qualified domain name (X.509 CN) of the server'
+    required: true
+    default: localhost
+  clients:
+    description: 'Space-separated list of the client X.509 Common Names'
+    required: true
+    default: client
+  validity:
+    description: 'Number of days for which the certificates will be valid'
+    required: true
+    default: 1
+runs:
+  using: "composite"
+  steps:
+    - name: Install easy-rsa package
+      run: |
+        sudo apt-get update
+        sudo apt-get install easy-rsa
+      shell: bash
+    - name: Generate PKI
+      run: |
+        EASYRSA=/usr/share/easy-rsa
+        export EASYRSA_BATCH=1 EASYRSA_PKI="$PWD/pki" EASYRSA_DN=cn_only EASYRSA_NO_VARS=1
+        export EASYRSA_CA_EXPIRE='${{ inputs.validity }}' EASYRSA_CERT_EXPIRE='${{ inputs.validity }}'
+        $EASYRSA/easyrsa init-pki
+        $EASYRSA/easyrsa build-ca nopass
+        $EASYRSA/easyrsa build-server-full '${{ inputs.server }}' nopass
+        for client in ${{ inputs.clients }}
+        do
+          $EASYRSA/easyrsa build-client-full "$client" nopass
+        done
+        # Copy the keys and certificates only
+        mkdir artifact
+        cp -v $EASYRSA_PKI/ca.* $EASYRSA_PKI/issued/* $EASYRSA_PKI/private/* artifact/
+        # Also generate a PSK
+        openssl rand -hex 32 > artifact/client.psk
+      shell: bash
+    - name: Upload PKI as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ inputs.pki-name }}
+        path: artifact/

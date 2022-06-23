@@ -1,0 +1,239 @@
+name: zabbix-integration
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  CARGO_TERM_COLOR: always
+  CI_EXAMPLE_BIN: clap_sender
+
+jobs:
+  temporary-credentials:
+    runs-on: ubuntu-latest
+    outputs:
+      postgres_password: ${{ steps.postgres_password.outputs.password }}
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - id: postgres_password
+        uses: ./.github/actions/generate-password
+      - name: Generate temporary mTLS PKI
+        uses: ./.github/actions/generate-pki
+        with:
+          pki-name: cert-pki
+
+  build-and-unit-tests:
+    runs-on: ubuntu-latest
+
+    env:
+      BUILD_FEATURES: "${{ matrix.async }} ${{ matrix.tls }} ${{ matrix.async-tls }} ${{ matrix.tracing }} ${{ matrix.clap }}"
+
+    strategy:
+      # The matrix builds and runs unit tests for all possible combinations of features.
+      matrix:
+        tls:
+          - null
+          - tls_openssl
+          - tls_rustls
+        async:
+          - null
+          - async_tokio
+        tracing:
+          - null
+          - tracing
+        clap:
+          - null
+          - clap
+        # Add required async tls features when using async_tokio
+        include:
+          - async: async_tokio
+            tls: tls_openssl
+            async-tls: tls_openssl_tokio
+          - async: async_tokio
+            tls: tls_rustls
+            async-tls: tls_rustls_tokio
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v1.4.0
+
+      # cargo test also builds all examples (that are compatible with the features),
+      # so we can run unit tests *and* get the example binary needed for integration
+      # testing in the `test` job.
+      - name: Run unit tests and build examples
+        run: cargo test --verbose --features "${{ env.BUILD_FEATURES }}"
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.CI_EXAMPLE_BIN }}-${{ matrix.async }}-${{ matrix.tls }}
+          path: target/debug/examples/${{ env.CI_EXAMPLE_BIN }}
+        # Only upload the builds with both clap and tracing enabled.
+        # clap_sender only gets built with clap enabled, anyway.
+        if: ${{ matrix.clap == 'clap' && matrix.tracing == 'tracing' }}
+
+
+  test:
+    runs-on: ubuntu-latest
+
+    needs:
+      - build-and-unit-tests
+      - temporary-credentials
+
+    strategy:
+      # Test all possible configurations, even if one fails,
+      # to give more context to failures.
+      fail-fast: false
+      matrix:
+        encryption:
+          # The encryption mode that the example binary is called with
+          - unencrypted
+          - psk
+          - cert
+        tls:
+          # The cargo feature corresponding to the TLS library under test
+          - tls_openssl
+          - tls_rustls
+        async:
+          # The cargo feature determining which (if any) async library is available
+          - null
+          - async_tokio
+        exclude:
+          # rustls doesn't support PSK
+          - encryption: psk
+            tls: tls_rustls
+
+    env:
+      # Used by API setup step and final test step
+      ZBX_TEST_HOSTGROUP: CI test hosts
+      ZBX_TEST_HOST_NAME: CI test host
+      ZBX_TEST_ITEM_NAME_PREFIX: CI test item
+      ZBX_TEST_ITEM_KEY_PREFIX: ci.test
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download mTLS PKI
+        uses: actions/download-artifact@v3
+        with:
+          name: cert-pki
+          path: pki
+
+      - name: Start job services
+        run: cd .github/ci && docker-compose up --detach
+        env:
+          PGPASSWORD: "${{ needs.temporary-credentials.outputs.postgres_password }}"
+          ZBX_ENC_VOLPATH: "${{ github.workspace }}/pki"
+          ZBX_TLSCAFILE: "ca.crt"
+          ZBX_TLSCERTFILE: "localhost.crt"
+          ZBX_TLSKEYFILE: "localhost.key"
+
+      - name: Download ${{ env.CI_EXAMPLE_BIN }} binary artifact for integration test
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.CI_EXAMPLE_BIN }}-${{ matrix.async }}-${{ matrix.tls }}
+
+      - name: Make downloaded artifact executable
+        run: chmod a+x ${{ env.CI_EXAMPLE_BIN }}
+
+      - name: Call Zabbix API to create test Host and Items
+        # Allow Docker private subnets, in addition to localhost
+        env:
+          ZBX_USER: Admin
+          ZBX_PASSWORD: zabbix
+        run: |
+          [ '${{ matrix.encryption }}' = 'psk' ] \
+            && PSK_ARGS="--tls-psk-identity ${{ env.CI_EXAMPLE_BIN }} --tls-psk-key $(cat pki/client.psk)" \
+            || PSK_ARGS=""
+
+          # Print the actual command as it is run, for debugging purposes
+          set -x
+          ./script/zabbix_api_setup.py \
+            --wait 120 \
+            --allow-ips '127.0.0.1, ::1, 172.16.0.0/12' \
+            --tls-accept ${{ matrix.encryption }} \
+            $PSK_ARGS \
+            http://localhost:8080
+
+      - name: Get Zabbix Server logs
+        run: cd .github/ci && docker-compose logs zabbix-server
+
+      - name: Reload the Zabbix Server configuration cache
+        run: |
+          # GitHub's Runner does this already, but making it explicit,
+          # because this script relies on early exit on error
+          set -e
+
+          # Get the container ID of the running Zabbix Server
+          # Timeout after 60 seconds if not successful
+          timeout 60 bash -c -- '
+            cd .github/ci
+            while true
+            do
+              # Capture the output of docker-compose to check for success
+              COMPOSE_OUT="$(docker-compose exec -T zabbix-server zabbix_server --runtime-control config_cache_reload 2>&1)"
+
+              # Display the full output
+              echo "$COMPOSE_OUT"
+
+              # Test for a success message and exit the loop if it is found
+              echo "$COMPOSE_OUT" | grep -q "Runtime control command was forwarded successfully" && break
+
+              # Wait one second before retrying
+              sleep 1
+            done
+          '
+          # Wait for the config cache to actually reload
+          sleep 5
+
+      - name: Test zbx_sender communication with Zabbix Server
+        run: |
+          # Don't exit on error; errors are handled at the end
+          set +e
+
+          # Increase the log level of Zabbix Server Trapper processes, to get useful information in case of error
+          (cd .github/ci && docker-compose exec -T zabbix-server zabbix_server --runtime-control log_level_increase=trapper)
+
+          # Configure TLS command line options
+          case '${{ matrix.encryption }}' in
+            unencrypted)
+              TLS_OPTS="";;
+            psk)
+              TLS_OPTS="--tls-connect psk --tls-psk-identity ${{ env.CI_EXAMPLE_BIN }} --tls-psk-file $PWD/pki/client.psk";;
+            cert)
+              TLS_OPTS="--tls-connect cert --tls-ca-file $PWD/pki/ca.crt --tls-cert-file $PWD/pki/client.crt --tls-key-file $PWD/pki/client.key";;
+            *) echo "Unsupported encryption type"; exit 1;;
+          esac
+          # Call ${{ env.CI_EXAMPLE_BIN }} to send some items to Zabbix Server
+          ./${{ env.CI_EXAMPLE_BIN }} --status-on-fail --zabbix-server localhost $TLS_OPTS --input-file - <<EOF
+          "$ZBX_TEST_HOST_NAME" $ZBX_TEST_ITEM_KEY_PREFIX.character "Hello, world."
+          "$ZBX_TEST_HOST_NAME" $ZBX_TEST_ITEM_KEY_PREFIX.unsigned 54321
+          "$ZBX_TEST_HOST_NAME" $ZBX_TEST_ITEM_KEY_PREFIX.float 54.321
+          "$ZBX_TEST_HOST_NAME" $ZBX_TEST_ITEM_KEY_PREFIX.text "I have eaten
+          the plums
+          that were in
+          the icebox
+
+          and which
+          you were probably
+          saving
+          for breakfast
+
+          Forgive me
+          they were delicious
+          so sweet
+          and so cold"
+          EOF
+
+          # If ${{ env.CI_EXAMPLE_BIN }} exited with an error, print the Zabbix Server logs
+          if [ $? -ne 0 ]; then
+            printf '\n\nzabbix-server container logs:\n\n'
+            (cd .github/ci && docker-compose logs zabbix-server)
+            exit 1
+          fi

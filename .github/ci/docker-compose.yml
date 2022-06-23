@@ -1,0 +1,39 @@
+version: "2.1"
+services:
+  postgres-server:
+    image: postgres:latest
+    restart: unless-stopped
+    environment: &postgres-credentials
+      POSTGRES_USER: "${PGUSER:-zabbix}"
+      POSTGRES_PASSWORD: "${PGPASSWORD:-zabbix}"
+      POSTGRES_DB: "${PGDATABASE:-zabbix}"
+
+  zabbix-frontend:
+    image: zabbix/zabbix-web-nginx-pgsql:latest
+    restart: unless-stopped
+    depends_on:
+      - postgres-server
+      - zabbix-server
+    environment:
+      <<: *postgres-credentials
+      PHP_TZ: "Etc/UTC"
+      ZBX_SERVER_HOST: zabbix-server
+    ports:
+      - "8080:8080"
+
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:latest
+    restart: unless-stopped
+    depends_on:
+      - postgres-server
+    environment:
+      <<: *postgres-credentials
+      ZBX_CACHEUPDATEFREQUENCY: "1"
+      # Bring these in from the calling environment so CI workflows can configure TLS
+      ZBX_TLSCAFILE: "${ZBX_TLSCAFILE}"
+      ZBX_TLSCERTFILE: "${ZBX_TLSCERTFILE}"
+      ZBX_TLSKEYFILE: "${ZBX_TLSKEYFILE}"
+    ports:
+      - "10051:10051"
+    volumes:
+      - "${ZBX_ENC_VOLPATH:-/var/empty}:/var/lib/zabbix/enc:ro"
