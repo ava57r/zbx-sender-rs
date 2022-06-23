@@ -1,21 +1,21 @@
 extern crate zbx_sender;
 
-use std::{io::Read, path::PathBuf, ffi::OsStr};
 #[cfg(unix)]
 use std::os::unix::prelude::*;
 #[cfg(windows)]
 use std::os::windows::prelude::*;
+use std::{ffi::OsStr, io::Read, path::PathBuf};
 
 use anyhow::{anyhow, bail};
 use clap::Parser;
 
 use csv::ReaderBuilder;
-use zbx_sender::{Sender, ToMessage, Response};
+use zbx_sender::{Response, Sender, ToMessage};
 
 #[cfg(feature = "_tls_common")]
 use {
     std::convert::TryInto,
-    zbx_sender::tls::{ClapArgs, TlsConfig}
+    zbx_sender::tls::{ClapArgs, TlsConfig},
 };
 
 #[derive(Parser)]
@@ -24,7 +24,7 @@ struct Cli {
     /// Hostname or IP address of the Zabbix Server or Zabbix Proxy
     #[clap(short = 'z', long = "zabbix-server")]
     server: String,
-    
+
     /// Port number that Zabbix accepts traps / sender values on
     #[clap(short, long, default_value = "10051")]
     port: u16,
@@ -47,14 +47,14 @@ struct Cli {
 
     /// Load values from input file. Specify - as <input-file> to read values from standard input.
     /// Each line of file contains, delimited by a single space:
-    /// 
+    ///
     /// <hostname> <key> <value>
-    /// 
+    ///
     /// Each value must be specified on its own line. Each line must contain 3 whitespace delimited
     /// entries: <hostname> <key> <value>. Entries must be quoted with double quotes (") if they
     /// contain spaces. Double quotes and backslashes in entries can be escaped with a backslash
     /// (\).
-    /// 
+    ///
     /// This is a similar format to the native zabbix_sender, but not identical: notably, this
     /// tool does not accept tabs or multiple spaces between entries.
     #[clap(short, long)]
@@ -69,7 +69,7 @@ struct Cli {
 /// whether a File or Stdin is being used as input.
 /// It returns owned data, because the lifetime of the read data
 /// must outlive the references to it taken by Sender.send()
-fn records_from_input<R: Read>(mut reader: csv::Reader<R>) -> csv::Result<Vec<csv::StringRecord>>  {
+fn records_from_input<R: Read>(mut reader: csv::Reader<R>) -> csv::Result<Vec<csv::StringRecord>> {
     // No Iterator.try_map(), so we have to iterate
     // and handle errors by for loop.
     let mut records = Vec::new();
@@ -107,8 +107,7 @@ fn main() -> Result<(), anyhow::Error> {
 
     let response = if let Some(path) = args.input_file {
         let mut rdr = ReaderBuilder::new();
-        rdr
-            .delimiter(b' ')
+        rdr.delimiter(b' ')
             .double_quote(false)
             .escape(Some(b'\\'))
             .has_headers(false)
@@ -121,16 +120,21 @@ fn main() -> Result<(), anyhow::Error> {
         } else {
             records_from_input(rdr.from_path(path)?)
         }?;
-        let items: Vec<(&str, &str, &str)> = records.iter()
-            .map(|item| (&item[0], &item[1], &item[2])).collect();
+        let items: Vec<(&str, &str, &str)> = records
+            .iter()
+            .map(|item| (&item[0], &item[1], &item[2]))
+            .collect();
 
         send_wrapper(&sender, items)?
     } else if let Some(host) = args.host {
-        send_wrapper(&sender, (
-            host.as_str(),
-            args.key.expect("Guaranteed by Cli").as_str(),
-            args.value.expect("Guaranteed by Cli").as_str()
-        ))?
+        send_wrapper(
+            &sender,
+            (
+                host.as_str(),
+                args.key.expect("Guaranteed by Cli").as_str(),
+                args.value.expect("Guaranteed by Cli").as_str(),
+            ),
+        )?
     } else {
         bail!("You must specify either --input-file or --host, --key, and --value");
     };
@@ -138,7 +142,9 @@ fn main() -> Result<(), anyhow::Error> {
     if response.success() {
         println!("{:?}", response);
         if args.fail {
-            let n_failed = response.failed_cnt().ok_or_else(|| anyhow!("Could not parse failed items count"))?;
+            let n_failed = response
+                .failed_cnt()
+                .ok_or_else(|| anyhow!("Could not parse failed items count"))?;
             if n_failed > 0 {
                 bail!("{} items failed", n_failed);
             }
