@@ -47,10 +47,10 @@ trait Stream: std::io::Read + std::io::Write {}
 impl<T: std::io::Read + std::io::Write> Stream for T {}
 
 #[cfg(feature = "async_tokio")]
-trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin {}
+trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync {}
 
 #[cfg(feature = "async_tokio")]
-impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin> AsyncStream for T {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync> AsyncStream for T {}
 
 pub use crate::error::{Error, Result};
 
