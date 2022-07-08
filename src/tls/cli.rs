@@ -2,13 +2,13 @@ use std::{convert::TryFrom, path::PathBuf};
 
 use super::EncryptionType;
 
-#[derive(clap::Args)]
+#[derive(clap::Args, serde::Deserialize, Clone, Debug)]
 /// Implementation of [`clap::Args`](https://docs.rs/clap/3/clap/trait.Args.html) that mirrors
 /// the [Zabbix native tool TLS configuration
 /// options](https://www.zabbix.com/documentation/current/en/manpages/zabbix_sender).
 pub struct ClapArgs {
     /// How to encrypt the connection to Zabbix Server or Proxy
-    #[clap(long, arg_enum, default_value = "unencrypted")]
+    #[clap(long, arg_enum, default_value_t)]
     pub tls_connect: EncryptionType,
 
     /// PSK-identity string

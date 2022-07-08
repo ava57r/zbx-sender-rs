@@ -29,10 +29,11 @@ mod openssl;
 #[cfg(feature = "tls_openssl")]
 pub(crate) use self::openssl::{StreamAdapter, TlsError};
 
-#[derive(Clone, Debug)]
+#[derive(serde::Deserialize, Clone, Debug, Default)]
 #[cfg_attr(feature = "clap", derive(clap::ArgEnum))]
 /// Encryption method used for the connection to Zabbix
 pub enum EncryptionType {
+    #[default]
     /// connect without encryption (default)
     Unencrypted,
     /// connect using TLS and a pre-shared key
