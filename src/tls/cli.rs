@@ -6,6 +6,9 @@ use super::EncryptionType;
 /// Implementation of [`clap::Args`](https://docs.rs/clap/3/clap/trait.Args.html) that mirrors
 /// the [Zabbix native tool TLS configuration
 /// options](https://www.zabbix.com/documentation/current/en/manpages/zabbix_sender).
+///
+/// Also implements `serde::Deserialize` so that it can be used as a part of a larger `Deserialize`
+/// struct, like for a configuration file.
 pub struct ClapArgs {
     /// How to encrypt the connection to Zabbix Server or Proxy
     #[clap(long, arg_enum, default_value_t)]
