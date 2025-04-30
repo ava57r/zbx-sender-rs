@@ -5,13 +5,10 @@ use zbx_sender::{Response, Result, SendValue, Sender};
 
 fn send(command: &str) -> Result<Response> {
     let sender = Sender::new(command.to_owned(), 10051);
-    let collection: Vec<SendValue> = [
+    let collection: Vec<SendValue> = vec![
         ("host1", "key1", "value").into(),
         ("host1", "key1", "value2").into(),
-    ]
-    .iter()
-    .cloned()
-    .collect();
+    ];
 
     sender.send(collection)
 }

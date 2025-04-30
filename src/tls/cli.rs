@@ -1,5 +1,7 @@
 use std::{convert::TryFrom, path::PathBuf};
 
+use clap::error::ErrorKind;
+
 use super::EncryptionType;
 
 #[derive(clap::Args, serde::Deserialize, Clone, Debug)]
@@ -11,16 +13,16 @@ use super::EncryptionType;
 /// struct, like for a configuration file.
 pub struct ClapArgs {
     /// How to encrypt the connection to Zabbix Server or Proxy
-    #[clap(long, arg_enum, default_value_t)]
+    #[arg(long, value_enum, default_value_t)]
     pub tls_connect: EncryptionType,
 
     /// PSK-identity string
     ///
     /// Mutually exclusive with all certificate-related arguments (i.e. `--tls-cert-file`,
     /// `--tls-ca-file`, *etc.*)
-    #[clap(
+    #[arg(
         long,
-        required_if_eq("tls-connect", "psk"),
+        required_if_eq("tls_connect", "psk"),
         conflicts_with_all(Self::CERT_ARGS)
     )]
     pub tls_psk_identity: Option<String>,
@@ -29,42 +31,42 @@ pub struct ClapArgs {
     ///
     /// Mutually exclusive with all certificate-related arguments (i.e. `--tls-cert-file`,
     /// `--tls-ca-file`, *etc.*)
-    #[clap(
+    #[arg(
         long,
-        required_if_eq("tls-connect", "psk"),
+        required_if_eq("tls_connect", "psk"),
         conflicts_with_all(Self::CERT_ARGS)
     )]
     pub tls_psk_file: Option<PathBuf>,
 
     /// Full pathname of a file containing the top-level CA(s) certificates for
     /// peer certificate verification (default is to use system CA trust store)
-    #[clap(long)]
+    #[arg(long)]
     pub tls_ca_file: Option<PathBuf>,
 
     /// Allowed server certificate issuer
-    #[clap(long)]
+    #[arg(long)]
     pub tls_server_cert_issuer: Option<String>,
 
     /// Allowed server certificate subject
-    #[clap(long)]
+    #[arg(long)]
     pub tls_server_cert_subject: Option<String>,
 
     /// Full pathname of a file containing the certificate or certificate chain
-    #[clap(long, required_if_eq("tls-connect", "cert"))]
+    #[arg(long, required_if_eq("tls_connect", "cert"))]
     pub tls_cert_file: Option<PathBuf>,
 
     /// Full pathname of a file containing the private key
-    #[clap(long, required_if_eq("tls-connect", "cert"))]
+    #[arg(long, required_if_eq("tls_connect", "cert"))]
     pub tls_key_file: Option<PathBuf>,
 }
 
 impl ClapArgs {
     const CERT_ARGS: &'static [&'static str] = &[
-        "tls-cert-file",
-        "tls-key-file",
-        "tls-ca-file",
-        "tls-server-cert-issuer",
-        "tls-server-cert-subject",
+        "tls_cert_file",
+        "tls_key_file",
+        "tls_ca_file",
+        "tls_server_cert_issuer",
+        "tls_server_cert_subject",
     ];
 }
 
@@ -98,6 +100,6 @@ impl TryFrom<ClapArgs> for super::TlsConfig {
         // conflicts (e.g. cert arguments when tls_connect=psk)
         builder
             .fallible_build()
-            .map_err(|e| Self::Error::raw(clap::ErrorKind::ArgumentConflict, e))
+            .map_err(|e| Self::Error::raw(ErrorKind::ArgumentConflict, e))
     }
 }

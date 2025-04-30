@@ -1,14 +1,24 @@
+[workspace]
+members = ["examples/clap_sender"]
+
+[workspace.package]
+authors = ["Alexander Andreev <andreevlex.as@gmail.com>"]
+homepage = "https://github.com/ava57r/zbx-sender-rs"
+repository = "https://github.com/ava57r/zbx-sender-rs"
+keywords = ["zabbix", "zabbix-sender", "zabbix-protocol"]
+license = "MIT"
+
 [package]
 name = "zbx_sender"
 version = "0.4.1"
-authors = ["Alexander Andreev <andreevlex.as@gmail.com>"]
+authors.workspace = true
 description = "Implementation of Zabbix Sender Client."
-homepage = "https://github.com/ava57r/zbx-sender-rs"
-repository = "https://github.com/ava57r/zbx-sender-rs"
+homepage.workspace = true
+repository.workspace = true
 documentation = "https://docs.rs/zbx_sender"
-keywords = ["zabbix", "zabbix-sender", "zabbix-protocol"]
+keywords.workspace = true
 readme = "README.md"
-license = "MIT"
+license.workspace = true
 edition = "2021"
 
 [package.metadata."docs.rs"]
@@ -21,6 +31,7 @@ features = [
 
 [features]
 async_tokio = ["tokio"]
+clap = ["dep:clap"]
 _tls_common = ["derive_builder"]
 tls_rustls = ["_tls_common", "rustls", "rustls-pemfile", "rustls-native-certs", "x509-certificate"]
 tls_openssl = ["_tls_common", "openssl", "openssl-errors", "hex"]
@@ -36,7 +47,7 @@ byteorder = "1.4"
 thiserror = "1.0.31"
 tokio = { version = "1.18", optional = true, features = ["net", "io-util"] }
 tracing = { version = "0.1", optional = true, features = ["log", "std"], default-features = false }
-clap = { version = "3.1.17", optional = true, features = ["std", "derive"], default-features = false }
+clap = { version = "4.5.37", optional = true, features = ["std", "derive"], default-features = false }
 derive_builder = { version = "0.11.2", optional = true }
 rustls = { version = "0.20.4", features = ["dangerous_configuration"], optional = true }
 rustls-pemfile = { version = "1.0.0", optional = true }
@@ -49,15 +60,9 @@ openssl-errors = { version = "0.2.0", optional = true }
 tokio-openssl = { version = "0.6.3", optional = true }
 
 [dev-dependencies]
-anyhow = "1.0.57"
-csv = "1.1.6"
 mock-io = { version = "0.3.2", features = ["sync", "async-tokio"] }
 tokio = { version = "1.18.1", features = ["net", "io-util", "rt", "macros"] }
 tokio-test = "0.4.2"
-
-[[example]]
-name = "clap_sender"
-required-features = ["clap"]
 
 [[example]]
 name = "tls_sender"
