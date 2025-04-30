@@ -30,13 +30,13 @@ features = [
 ]
 
 [features]
-async_tokio = ["tokio"]
+async_tokio = ["dep:tokio"]
 clap = ["dep:clap"]
-_tls_common = ["derive_builder"]
-tls_rustls = ["_tls_common", "rustls", "rustls-pemfile", "rustls-native-certs", "x509-certificate"]
-tls_openssl = ["_tls_common", "openssl", "openssl-errors", "hex"]
-tls_rustls_tokio = ["tokio-rustls"]
-tls_openssl_tokio = ["tokio-openssl"]
+_tls_common = ["dep:derive_builder"]
+tls_rustls = ["_tls_common", "dep:rustls", "dep:rustls-pemfile", "dep:rustls-native-certs", "dep:x509-certificate"]
+tls_openssl = ["_tls_common", "dep:openssl", "dep:openssl-errors", "dep:hex"]
+tls_rustls_tokio = ["dep:tokio-rustls"]
+tls_openssl_tokio = ["dep:tokio-openssl"]
 
 [dependencies]
 serde  = { version = "1", features = ["derive"] }
