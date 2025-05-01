@@ -116,6 +116,9 @@ jobs:
       ZBX_TEST_HOST_NAME: CI test host
       ZBX_TEST_ITEM_NAME_PREFIX: CI test item
       ZBX_TEST_ITEM_KEY_PREFIX: ci.test
+      ZBX_TLSCAFILE: "/var/lib/zabbix/enc/ca.crt"
+      ZBX_TLSCERTFILE: "/var/lib/zabbix/enc/localhost.crt"
+      ZBX_TLSKEYFILE: "/var/lib/zabbix/enc/localhost.key"
 
     steps:
       - uses: actions/checkout@v4
@@ -131,9 +134,6 @@ jobs:
         env:
           PGPASSWORD: "${{ needs.temporary-credentials.outputs.postgres_password }}"
           ZBX_ENC_VOLPATH: "${{ github.workspace }}/pki"
-          ZBX_TLSCAFILE: "ca.crt"
-          ZBX_TLSCERTFILE: "localhost.crt"
-          ZBX_TLSKEYFILE: "localhost.key"
 
       - name: Download ${{ env.CI_EXAMPLE_BIN }} binary artifact for integration test
         uses: actions/download-artifact@v4
