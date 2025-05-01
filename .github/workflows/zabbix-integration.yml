@@ -127,7 +127,7 @@ jobs:
           path: pki
 
       - name: Start job services
-        run: cd .github/ci && docker-compose up --detach
+        run: cd .github/ci && docker compose up --detach
         env:
           PGPASSWORD: "${{ needs.temporary-credentials.outputs.postgres_password }}"
           ZBX_ENC_VOLPATH: "${{ github.workspace }}/pki"
@@ -163,7 +163,7 @@ jobs:
             http://localhost:8080
 
       - name: Get Zabbix Server logs
-        run: cd .github/ci && docker-compose logs zabbix-server
+        run: cd .github/ci && docker compose logs zabbix-server
 
       - name: Reload the Zabbix Server configuration cache
         run: |
@@ -177,8 +177,8 @@ jobs:
             cd .github/ci
             while true
             do
-              # Capture the output of docker-compose to check for success
-              COMPOSE_OUT="$(docker-compose exec -T zabbix-server zabbix_server --runtime-control config_cache_reload 2>&1)"
+              # Capture the output of docker compose to check for success
+              COMPOSE_OUT="$(docker compose exec -T zabbix-server zabbix_server --runtime-control config_cache_reload 2>&1)"
 
               # Display the full output
               echo "$COMPOSE_OUT"
@@ -199,7 +199,7 @@ jobs:
           set +e
 
           # Increase the log level of Zabbix Server Trapper processes, to get useful information in case of error
-          (cd .github/ci && docker-compose exec -T zabbix-server zabbix_server --runtime-control log_level_increase=trapper)
+          (cd .github/ci && docker compose exec -T zabbix-server zabbix_server --runtime-control log_level_increase=trapper)
 
           # Configure TLS command line options
           case '${{ matrix.encryption }}' in
@@ -235,6 +235,6 @@ jobs:
           # If ${{ env.CI_EXAMPLE_BIN }} exited with an error, print the Zabbix Server logs
           if [ $? -ne 0 ]; then
             printf '\n\nzabbix-server container logs:\n\n'
-            (cd .github/ci && docker-compose logs zabbix-server)
+            (cd .github/ci && docker compose logs zabbix-server)
             exit 1
           fi
