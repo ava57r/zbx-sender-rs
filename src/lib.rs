@@ -459,7 +459,7 @@ impl<'a> From<(&'a str, &'a str, &'a str)> for Message {
 impl ToMessage for Vec<SendValue> {
     fn to_message(self) -> Message {
         let mut msg = Message::default();
-        msg.data.extend(self.into_iter());
+        msg.data.extend(self);
 
         msg
     }

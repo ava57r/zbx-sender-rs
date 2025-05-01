@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use rustls::{client::InvalidDnsNameError, ClientConnection, ServerName, StreamOwned};
+use rustls::{client::danger::{ServerCertVerified, ServerCertVerifier}, pki_types::{CertificateDer, InvalidDnsNameError, PrivateKeyDer, ServerName}, ClientConnection, StreamOwned};
 use thiserror::Error;
 #[cfg(feature = "tracing")]
 use tracing::warn;
@@ -48,10 +48,10 @@ pub struct StreamAdapter {
 impl StreamAdapter {
     pub fn connect(
         &self,
-        server_name: impl AsRef<str>,
+        server_name: &str,
         stream: std::net::TcpStream,
     ) -> Result<StreamOwned<ClientConnection, std::net::TcpStream>, TlsError> {
-        let server_name = server_name.as_ref().try_into()?;
+        let server_name = server_name.to_owned().try_into()?;
         let conn = ClientConnection::new(Arc::clone(&self.config), server_name)?;
         Ok(StreamOwned::new(conn, stream))
     }
@@ -59,10 +59,10 @@ impl StreamAdapter {
     #[cfg(feature = "async_tokio")]
     pub async fn connect_async(
         &self,
-        server_name: impl AsRef<str>,
+        server_name: &str,
         stream: tokio::net::TcpStream,
     ) -> Result<tokio_rustls::client::TlsStream<tokio::net::TcpStream>, TlsError> {
-        let server_name = server_name.as_ref().try_into()?;
+        let server_name = server_name.to_owned().try_into()?;
         let conn = tokio_rustls::TlsConnector::from(Arc::clone(&self.config));
         conn.connect(server_name, stream)
             .await
@@ -106,20 +106,19 @@ impl TryFrom<TlsConfig> for rustls::ClientConfig {
                     load_key_file(zabbix_config.key_file.expect("guaranteed by builder"))?;
                 let client_cert =
                     load_cert_file(zabbix_config.cert_file.expect("guaranteed by builder"))?;
-                // `with_safe_defaults()` includes a set of cipher suites
-                // that partially overlaps with Zabbix's default cipher suites
                 rustls::ClientConfig::builder()
-                    .with_safe_defaults()
+                    .dangerous()
                     .with_custom_certificate_verifier(Arc::new(verifier))
-                    .with_single_cert(client_cert, client_key)
+                    .with_client_auth_cert(client_cert, client_key)
                     .map_err(|e| e.into())
             }
         }
     }
 }
 
+#[derive(Debug)]
 struct ZabbixServerCertVerifier {
-    inner: rustls::client::WebPkiVerifier,
+    inner: Arc<rustls::client::WebPkiServerVerifier>,
     subject: Option<String>,
     issuer: Option<String>,
 }
@@ -130,7 +129,9 @@ impl ZabbixServerCertVerifier {
         subject: Option<String>,
         issuer: Option<String>,
     ) -> Self {
-        let verifier = rustls::client::WebPkiVerifier::new(root_store, None);
+        let verifier = rustls::client::WebPkiServerVerifier::builder(Arc::new(root_store))
+            .build()
+            .expect("root_store should never be empty");
         Self {
             inner: verifier,
             issuer,
@@ -139,21 +140,26 @@ impl ZabbixServerCertVerifier {
     }
 }
 
-impl rustls::client::ServerCertVerifier for ZabbixServerCertVerifier {
+fn certificate_config_error(s: impl ToString) -> rustls::Error {
+    rustls::Error::InvalidCertificate(
+        rustls::CertificateError::Other(
+            rustls::OtherError(Arc::new(TlsError::Config(s.to_string())))
+        )
+    )
+}
+
+impl ServerCertVerifier for ZabbixServerCertVerifier {
     fn verify_server_cert(
         &self,
-        end_entity: &rustls::Certificate,
-        intermediates: &[rustls::Certificate],
-        server_name: &ServerName,
-        scts: &mut dyn Iterator<Item = &[u8]>,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
         ocsp_response: &[u8],
-        now: std::time::SystemTime,
-    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
-        use rustls::Error;
-
+        now: rustls::pki_types::UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
         let parsed_cert = if self.subject.is_some() || self.issuer.is_some() {
-            let parsed_cert = CapturedX509Certificate::from_der(end_entity.0.as_slice())
-                .map_err(|e| Error::General(e.to_string()))?;
+            let parsed_cert = CapturedX509Certificate::from_der(end_entity.as_ref())
+                .map_err(certificate_config_error)?;
             Some(parsed_cert)
         } else {
             None
@@ -164,7 +170,6 @@ impl rustls::client::ServerCertVerifier for ZabbixServerCertVerifier {
                 end_entity,
                 intermediates,
                 server_name,
-                scts,
                 ocsp_response,
                 now,
             )
@@ -175,9 +180,9 @@ impl rustls::client::ServerCertVerifier for ZabbixServerCertVerifier {
                         .expect("guaranteed by above if conditions")
                         .subject_name()
                         .user_friendly_str()
-                        .map_err(|e| Error::InvalidCertificateData(e.to_string()))?;
+                        .map_err(certificate_config_error)?;
                     if &subject_dn != subject {
-                        return Err(Error::InvalidCertificateData(format!(
+                        return Err(certificate_config_error(format!(
                             "Certificate subject `{}` does not match required \
                                  server_cert_subject from configuration: `{}`",
                             subject_dn, subject
@@ -193,9 +198,9 @@ impl rustls::client::ServerCertVerifier for ZabbixServerCertVerifier {
                         .expect("guaranteed by above if conditions")
                         .issuer_name()
                         .user_friendly_str()
-                        .map_err(|e| Error::InvalidCertificateData(e.to_string()))?;
+                        .map_err(certificate_config_error)?;
                     if &issuer_dn != issuer {
-                        return Err(Error::InvalidCertificateData(format!(
+                        return Err(certificate_config_error(format!(
                             "Certificate issuer `{}` does not match required \
                                  server_cert_issuer from configuration: `{}`",
                             issuer_dn, issuer
@@ -205,82 +210,85 @@ impl rustls::client::ServerCertVerifier for ZabbixServerCertVerifier {
                 Ok(ok)
             })
     }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.inner.supported_verify_schemes()
+    }
 }
 
-fn load_cert_file(path: impl AsRef<Path>) -> Result<Vec<rustls::Certificate>, TlsError> {
+fn load_cert_file(path: impl AsRef<Path>) -> Result<Vec<CertificateDer<'static>>, TlsError> {
     let path = path.as_ref();
-    let mut rdr = BufReader::new(File::open(&path)?);
-    let chain: Vec<rustls::Certificate> = rustls_pemfile::certs(&mut rdr)?
-        .into_iter()
-        .map(rustls::Certificate)
-        .collect();
+    let mut rdr = BufReader::new(File::open(path)?);
+    let chain: Vec<_> = rustls_pemfile::certs(&mut rdr)
+        .collect::<Result<_, _>>()?;
     if chain.is_empty() {
         Err(TlsError::Config(format!(
             "no certificates found in {}",
-            path.to_string_lossy()
+            path.display()
         )))
     } else {
         Ok(chain)
     }
 }
 
-fn load_key_file(path: impl AsRef<Path>) -> Result<rustls::PrivateKey, TlsError> {
-    use rustls_pemfile::Item::*;
-
+fn load_key_file(path: impl AsRef<Path>) -> Result<PrivateKeyDer<'static>, TlsError> {
     let path = path.as_ref();
-    let mut rdr = BufReader::new(File::open(&path)?);
+    let mut rdr = BufReader::new(File::open(path)?);
     let mut found_key = None;
-    while let Some(item) = rustls_pemfile::read_one(&mut rdr)? {
-        match item {
-            RSAKey(v) | PKCS8Key(v) | ECKey(v) => {
-                if found_key.is_some() {
-                    return Err(TlsError::Config(format!(
-                        "multiple keys found in {}",
-                        path.to_string_lossy()
-                    )));
-                }
-                found_key = Some(rustls::PrivateKey(v));
-            }
-            _ => {
-                #[cfg(feature = "tracing")]
-                warn!("certificate found in {}", path.to_string_lossy())
-            }
+    while let Some(key) = rustls_pemfile::private_key(&mut rdr)? {
+        if found_key.is_some() {
+            return Err(TlsError::Config(format!(
+                "multiple keys found in {}",
+                path.display()
+            )));
         }
+        found_key = Some(key);
     }
     found_key
-        .ok_or_else(|| TlsError::Config(format!("no keys found in {}", path.to_string_lossy())))
+        .ok_or_else(|| TlsError::Config(format!("no keys found in {}", path.display())))
 }
 
 fn load_ca_file(path: impl AsRef<Path>) -> Result<rustls::RootCertStore, TlsError> {
+    let path = path.as_ref();
     let mut roots = rustls::RootCertStore::empty();
-    let mut rdr = BufReader::new(File::open(path.as_ref())?);
-    while let Some(item) = rustls_pemfile::read_one(&mut rdr)? {
-        if let rustls_pemfile::Item::X509Certificate(cert) = item {
-            let cert = rustls::Certificate(cert);
-            roots
-                .add(&cert)
-                .map_err(|e| TlsError::Config(format!("error loading ca_file: {}", e)))?;
-        } else {
-            #[cfg(feature = "tracing")]
-            warn!(
-                "found non-certificate item in {}",
-                path.as_ref().to_string_lossy()
-            );
-        }
+    let mut rdr = BufReader::new(File::open(path)?);
+    let root_certs: Vec<_> = rustls_pemfile::certs(&mut rdr).collect::<Result<_, _>>()?;
+    let (_, _n_ignored) = roots.add_parsable_certificates(root_certs);
+    #[cfg(feature = "tracing")]
+    if _n_ignored > 0 {
+        warn!("Could not parse {_n_ignored} certs in {}", path.display());
     }
     Ok(roots)
 }
 
 fn load_system_roots() -> Result<rustls::RootCertStore, TlsError> {
     let mut roots = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs()? {
-        let cert = rustls::Certificate(cert.0);
-        roots.add(&cert).map_err(|e| {
-            TlsError::Config(format!(
-                "error loading certificate from system roots: {}",
-                e
-            ))
-        })?;
+    let system_roots = rustls_native_certs::load_native_certs();
+    if let Some(err) = system_roots.errors.first() {
+        return Err(TlsError::Config(format!("could not load system trust store: {}", err)));
+    }
+    let (_, _n_ignored) = roots.add_parsable_certificates(system_roots.expect("errors checked above"));
+    #[cfg(feature = "tracing")]
+    if _n_ignored > 0 {
+        warn!("Could not parse {_n_ignored} certs from system trust store");
     }
     Ok(roots)
 }
