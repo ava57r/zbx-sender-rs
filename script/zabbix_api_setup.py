@@ -25,7 +25,9 @@ class ZabbixError(Exception):
 
     def __init__(self, response):
         if 'error' not in response:
-            raise RuntimeError('ZabbixError constructed from a non-error response')
+            raise RuntimeError(
+                'ZabbixError constructed from a non-error response'
+            )
 
         message = response['error']['message']
         data = response['error']['data']
@@ -48,7 +50,10 @@ class Zabbix:
         self.token = None
 
     def login(self, username, password):
-        self.token = self.call('user.login', {'user': username, 'password': password})
+        self.token = self.call(
+            'user.login',
+            {'username': username, 'password': password}
+        )
 
     def call(self, method, params):
         operation = {
@@ -58,21 +63,18 @@ class Zabbix:
             'params': params
         }
         self.request_id += 1
-
-        if self.token is not None:
-            operation['auth'] = self.token
-
         data = json.dumps(operation).encode('utf-8')
 
-        request = rq.Request(
-            self.endpoint,
-            data,
-            headers={'Content-Type': 'application/json'}
-        )
+        headers = {'Content-Type': 'application/json'}
+        if self.token is not None:
+            headers['Authorization'] = f"Bearer {self.token}"
+        request = rq.Request(self.endpoint, data, headers)
 
         with rq.urlopen(request) as response:
             if response.status != 200:
-                raise RuntimeError(f"Request failed with status: {response.status}")
+                raise RuntimeError(
+                    f"Request failed with status: {response.status}"
+                )
 
             result = json.load(response)
             if 'error' in result:
@@ -210,7 +212,12 @@ def main():
             identifier='hostid'
         )
 
-        item_valuetypes = {'float': 0, 'character': 1, 'unsigned': 3, 'text': 4}
+        item_valuetypes = {
+            'float': 0,
+            'character': 1,
+            'unsigned': 3,
+            'text': 4
+        }
 
         for item_valuetype, item_valuetype_id in item_valuetypes.items():
             item_name = f"{ZABBIX_ITEM_NAME_PREFIX} - {item_valuetype}"
