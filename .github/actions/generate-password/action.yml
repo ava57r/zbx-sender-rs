@@ -16,5 +16,5 @@ runs:
   using: "composite"
   steps:
     - id: generate-password
-      run: echo "::set-output name=password::$(openssl rand -base64 ${{ inputs.length }})"
+      run: echo "name=$(openssl rand -base64 ${{ inputs.length }})" >> $GITHUB_OUTPUT
       shell: bash
