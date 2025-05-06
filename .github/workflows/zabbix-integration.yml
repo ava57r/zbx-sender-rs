@@ -69,7 +69,11 @@ jobs:
       # so we can run unit tests *and* get the example binary needed for integration
       # testing in the `test` job.
       - name: Run unit tests and build examples
-        run: cargo test --verbose --workspace --features "${{ env.BUILD_FEATURES }}"
+        run: cargo test --verbose --features "${{ env.BUILD_FEATURES }}"
+
+      - name: Build integration test binary
+        run: cargo build --package "${{ env.CI_EXAMPLE_BIN }}" --features "${{ matrix.async }} ${{ matrix.tls }} ${{ matrix.async-tls }}"
+        if: ${{ matrix.clap == 'clap' && matrix.tracing == 'tracing' }}
 
       - uses: actions/upload-artifact@v4
         with:
