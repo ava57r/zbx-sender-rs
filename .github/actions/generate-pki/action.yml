@@ -45,7 +45,7 @@ runs:
         openssl rand -hex 32 > artifact/client.psk
       shell: bash
     - name: Upload PKI as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ inputs.pki-name }}
         path: artifact/

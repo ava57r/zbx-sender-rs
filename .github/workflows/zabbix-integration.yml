@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - ci
   pull_request:
     branches:
       - master
@@ -18,7 +19,7 @@ jobs:
       postgres_password: ${{ steps.postgres_password.outputs.password }}
     steps:
       - name: Check out repository code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - id: postgres_password
         uses: ./.github/actions/generate-password
       - name: Generate temporary mTLS PKI
@@ -57,12 +58,12 @@ jobs:
             tls: tls_rustls
             async-tls: tls_rustls_tokio
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@v1.4.0
+      - uses: Swatinem/rust-cache@v2
 
       # cargo test also builds all examples (that are compatible with the features),
       # so we can run unit tests *and* get the example binary needed for integration
@@ -70,7 +71,7 @@ jobs:
       - name: Run unit tests and build examples
         run: cargo test --verbose --features "${{ env.BUILD_FEATURES }}"
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.CI_EXAMPLE_BIN }}-${{ matrix.async }}-${{ matrix.tls }}
           path: target/debug/examples/${{ env.CI_EXAMPLE_BIN }}
@@ -115,27 +116,27 @@ jobs:
       ZBX_TEST_HOST_NAME: CI test host
       ZBX_TEST_ITEM_NAME_PREFIX: CI test item
       ZBX_TEST_ITEM_KEY_PREFIX: ci.test
+      ZBX_TLSCAFILE: "/var/lib/zabbix/enc/ca.crt"
+      ZBX_TLSCERTFILE: "/var/lib/zabbix/enc/localhost.crt"
+      ZBX_TLSKEYFILE: "/var/lib/zabbix/enc/localhost.key"
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Download mTLS PKI
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: cert-pki
           path: pki
 
       - name: Start job services
-        run: cd .github/ci && docker-compose up --detach
+        run: cd .github/ci && docker compose up --detach
         env:
           PGPASSWORD: "${{ needs.temporary-credentials.outputs.postgres_password }}"
           ZBX_ENC_VOLPATH: "${{ github.workspace }}/pki"
-          ZBX_TLSCAFILE: "ca.crt"
-          ZBX_TLSCERTFILE: "localhost.crt"
-          ZBX_TLSKEYFILE: "localhost.key"
 
       - name: Download ${{ env.CI_EXAMPLE_BIN }} binary artifact for integration test
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: ${{ env.CI_EXAMPLE_BIN }}-${{ matrix.async }}-${{ matrix.tls }}
 
@@ -162,7 +163,7 @@ jobs:
             http://localhost:8080
 
       - name: Get Zabbix Server logs
-        run: cd .github/ci && docker-compose logs zabbix-server
+        run: cd .github/ci && docker compose logs zabbix-server
 
       - name: Reload the Zabbix Server configuration cache
         run: |
@@ -176,8 +177,8 @@ jobs:
             cd .github/ci
             while true
             do
-              # Capture the output of docker-compose to check for success
-              COMPOSE_OUT="$(docker-compose exec -T zabbix-server zabbix_server --runtime-control config_cache_reload 2>&1)"
+              # Capture the output of docker compose to check for success
+              COMPOSE_OUT="$(docker compose exec -T zabbix-server zabbix_server --runtime-control config_cache_reload 2>&1)"
 
               # Display the full output
               echo "$COMPOSE_OUT"
@@ -198,7 +199,7 @@ jobs:
           set +e
 
           # Increase the log level of Zabbix Server Trapper processes, to get useful information in case of error
-          (cd .github/ci && docker-compose exec -T zabbix-server zabbix_server --runtime-control log_level_increase=trapper)
+          (cd .github/ci && docker compose exec -T zabbix-server zabbix_server --runtime-control log_level_increase=trapper)
 
           # Configure TLS command line options
           case '${{ matrix.encryption }}' in
@@ -234,6 +235,6 @@ jobs:
           # If ${{ env.CI_EXAMPLE_BIN }} exited with an error, print the Zabbix Server logs
           if [ $? -ne 0 ]; then
             printf '\n\nzabbix-server container logs:\n\n'
-            (cd .github/ci && docker-compose logs zabbix-server)
+            (cd .github/ci && docker compose logs zabbix-server)
             exit 1
           fi
