@@ -64,6 +64,11 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Differentiate the cache based on combination of TLS and Async features
+          key: "${{ matrix.async }}-${{ matrix.tls }}"
+          # Only save the cache if clap and tracing are enabled because they are additive features
+          save-if: ${{ matrix.clap == 'clap' && matrix.tracing == 'tracing' }}
 
       # cargo test also builds all examples (that are compatible with the features),
       # so we can run unit tests *and* get the example binary needed for integration
