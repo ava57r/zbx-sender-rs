@@ -1,0 +1,25 @@
+[package]
+name = "clap_sender"
+version = "0.1.0"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+license.workspace = true
+edition = "2021"
+publish = false
+
+[features]
+_tls_common = []
+async_tokio = ["dep:tokio", "zbx_sender/async_tokio"]
+tls_rustls = ["_tls_common", "zbx_sender/tls_rustls"]
+tls_openssl = ["_tls_common", "zbx_sender/tls_openssl"]
+tls_rustls_tokio = ["zbx_sender/tls_rustls_tokio"]
+tls_openssl_tokio = ["zbx_sender/tls_openssl_tokio"]
+
+[dependencies]
+anyhow = "1.0.57"
+clap = "4"
+csv = "1.1.6"
+tokio = { version = "1.18", optional = true, features = ["rt"] }
+zbx_sender = { path = "../..", features = ["clap", "tracing"] }

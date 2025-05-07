@@ -30,7 +30,7 @@ mod openssl;
 pub(crate) use self::openssl::{StreamAdapter, TlsError};
 
 #[derive(serde::Deserialize, Clone, Debug, Default)]
-#[cfg_attr(feature = "clap", derive(clap::ArgEnum))]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 /// Encryption method used for the connection to Zabbix
 pub enum EncryptionType {
     #[default]

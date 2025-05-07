@@ -64,6 +64,11 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Differentiate the cache based on combination of TLS and Async features
+          key: "${{ matrix.async }}-${{ matrix.tls }}"
+          # Only save the cache if clap and tracing are enabled because they are additive features
+          save-if: ${{ matrix.clap == 'clap' && matrix.tracing == 'tracing' }}
 
       # cargo test also builds all examples (that are compatible with the features),
       # so we can run unit tests *and* get the example binary needed for integration
@@ -71,10 +76,14 @@ jobs:
       - name: Run unit tests and build examples
         run: cargo test --verbose --features "${{ env.BUILD_FEATURES }}"
 
+      - name: Build integration test binary
+        run: cargo build --package "${{ env.CI_EXAMPLE_BIN }}" --features "${{ matrix.async }} ${{ matrix.tls }} ${{ matrix.async-tls }}"
+        if: ${{ matrix.clap == 'clap' && matrix.tracing == 'tracing' }}
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.CI_EXAMPLE_BIN }}-${{ matrix.async }}-${{ matrix.tls }}
-          path: target/debug/examples/${{ env.CI_EXAMPLE_BIN }}
+          path: target/debug/${{ env.CI_EXAMPLE_BIN }}
         # Only upload the builds with both clap and tracing enabled.
         # clap_sender only gets built with clap enabled, anyway.
         if: ${{ matrix.clap == 'clap' && matrix.tracing == 'tracing' }}

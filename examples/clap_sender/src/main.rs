@@ -19,30 +19,30 @@ use {
 };
 
 #[derive(Parser)]
-#[clap(setting = clap::AppSettings::DeriveDisplayOrder)]
+#[command(version, about, long_about = None)]
 struct Cli {
     /// Hostname or IP address of the Zabbix Server or Zabbix Proxy
-    #[clap(short = 'z', long = "zabbix-server")]
+    #[arg(short = 'z', long = "zabbix-server")]
     server: String,
 
     /// Port number that Zabbix accepts traps / sender values on
-    #[clap(short, long, default_value = "10051")]
+    #[arg(short, long, default_value = "10051")]
     port: u16,
 
     /// Host name the item belongs to in Zabbix. Host IP address and DNS name will not work.
-    #[clap(short = 's', long, requires = "key", requires = "value")]
+    #[arg(short = 's', long, requires = "key", requires = "value")]
     host: Option<String>,
 
     /// Item key in Zabbix
-    #[clap(short, long, requires = "host", requires = "value")]
+    #[arg(short, long, requires = "host", requires = "value")]
     key: Option<String>,
 
     /// Specify to exit with an error status if any items failed to be processed by Zabbix.
-    #[clap(short = 'f', long = "status-on-fail")]
+    #[arg(short = 'f', long = "status-on-fail")]
     fail: bool,
 
     /// Item value
-    #[clap(short = 'o', long, requires = "host", requires = "key")]
+    #[arg(short = 'o', long, requires = "host", requires = "key")]
     value: Option<String>,
 
     /// Load values from input file. Specify - as <input-file> to read values from standard input.
@@ -57,11 +57,11 @@ struct Cli {
     ///
     /// This is a similar format to the native zabbix_sender, but not identical: notably, this
     /// tool does not accept tabs or multiple spaces between entries.
-    #[clap(short, long)]
+    #[arg(short, long)]
     input_file: Option<PathBuf>,
 
     #[cfg(feature = "_tls_common")]
-    #[clap(flatten)]
+    #[command(flatten)]
     tls: ClapArgs,
 }
 
@@ -115,7 +115,7 @@ fn main() -> Result<(), anyhow::Error> {
 
         // The lifetime of `records` must exceed the lifetime of the
         // references taken in `items`, then passed to `Sender.send()`
-        let records = if path == OsStr::from_bytes(&[b'-']) {
+        let records = if path == OsStr::from_bytes(b"-") {
             records_from_input(rdr.from_reader(std::io::stdin()))
         } else {
             records_from_input(rdr.from_path(path)?)

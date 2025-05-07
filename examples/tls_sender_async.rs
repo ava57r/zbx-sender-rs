@@ -11,11 +11,11 @@ use zbx_sender::{
 
 #[derive(Parser)]
 struct Cli {
-    #[clap(short, long)]
+    #[arg(short, long)]
     server: String,
-    #[clap(short, long, default_value = "10051")]
+    #[arg(short, long, default_value = "10051")]
     port: u16,
-    #[clap(flatten)]
+    #[command(flatten)]
     tls: ClapArgs,
 }
 
