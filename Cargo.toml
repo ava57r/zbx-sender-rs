@@ -10,7 +10,7 @@ license = "MIT"
 
 [package]
 name = "zbx_sender"
-version = "0.4.1"
+version = "0.5.0"
 authors.workspace = true
 description = "Implementation of Zabbix Sender Client."
 homepage.workspace = true
