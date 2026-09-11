@@ -6,7 +6,11 @@ use std::{
     sync::Arc,
 };
 
-use rustls::{client::danger::{ServerCertVerified, ServerCertVerifier}, pki_types::{CertificateDer, InvalidDnsNameError, PrivateKeyDer, ServerName}, ClientConnection, StreamOwned};
+use rustls::{
+    ClientConnection, StreamOwned,
+    client::danger::{ServerCertVerified, ServerCertVerifier},
+    pki_types::{CertificateDer, InvalidDnsNameError, PrivateKeyDer, ServerName},
+};
 use thiserror::Error;
 #[cfg(feature = "tracing")]
 use tracing::warn;
@@ -141,11 +145,9 @@ impl ZabbixServerCertVerifier {
 }
 
 fn certificate_config_error(s: impl ToString) -> rustls::Error {
-    rustls::Error::InvalidCertificate(
-        rustls::CertificateError::Other(
-            rustls::OtherError(Arc::new(TlsError::Config(s.to_string())))
-        )
-    )
+    rustls::Error::InvalidCertificate(rustls::CertificateError::Other(rustls::OtherError(
+        Arc::new(TlsError::Config(s.to_string())),
+    )))
 }
 
 impl ServerCertVerifier for ZabbixServerCertVerifier {
@@ -166,13 +168,7 @@ impl ServerCertVerifier for ZabbixServerCertVerifier {
         };
 
         self.inner
-            .verify_server_cert(
-                end_entity,
-                intermediates,
-                server_name,
-                ocsp_response,
-                now,
-            )
+            .verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
             .and_then(|ok| {
                 if let Some(subject) = &self.subject {
                     let subject_dn = parsed_cert
@@ -237,8 +233,7 @@ impl ServerCertVerifier for ZabbixServerCertVerifier {
 fn load_cert_file(path: impl AsRef<Path>) -> Result<Vec<CertificateDer<'static>>, TlsError> {
     let path = path.as_ref();
     let mut rdr = BufReader::new(File::open(path)?);
-    let chain: Vec<_> = rustls_pemfile::certs(&mut rdr)
-        .collect::<Result<_, _>>()?;
+    let chain: Vec<_> = rustls_pemfile::certs(&mut rdr).collect::<Result<_, _>>()?;
     if chain.is_empty() {
         Err(TlsError::Config(format!(
             "no certificates found in {}",
@@ -262,8 +257,7 @@ fn load_key_file(path: impl AsRef<Path>) -> Result<PrivateKeyDer<'static>, TlsEr
         }
         found_key = Some(key);
     }
-    found_key
-        .ok_or_else(|| TlsError::Config(format!("no keys found in {}", path.display())))
+    found_key.ok_or_else(|| TlsError::Config(format!("no keys found in {}", path.display())))
 }
 
 fn load_ca_file(path: impl AsRef<Path>) -> Result<rustls::RootCertStore, TlsError> {
@@ -283,9 +277,13 @@ fn load_system_roots() -> Result<rustls::RootCertStore, TlsError> {
     let mut roots = rustls::RootCertStore::empty();
     let system_roots = rustls_native_certs::load_native_certs();
     if let Some(err) = system_roots.errors.first() {
-        return Err(TlsError::Config(format!("could not load system trust store: {}", err)));
+        return Err(TlsError::Config(format!(
+            "could not load system trust store: {}",
+            err
+        )));
     }
-    let (_, _n_ignored) = roots.add_parsable_certificates(system_roots.expect("errors checked above"));
+    let (_, _n_ignored) =
+        roots.add_parsable_certificates(system_roots.expect("errors checked above"));
     #[cfg(feature = "tracing")]
     if _n_ignored > 0 {
         warn!("Could not parse {_n_ignored} certs from system trust store");

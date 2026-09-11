@@ -220,7 +220,7 @@ fn verify_subject_issuer(
             } else {
                 continue;
             };
-            let value = if let Ok(v) = part.data().as_utf8() {
+            let value = if let Ok(v) = part.data().to_string() {
                 v
             } else {
                 continue;
