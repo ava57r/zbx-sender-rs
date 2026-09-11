@@ -18,8 +18,8 @@ tls_rustls_tokio = ["zbx_sender/tls_rustls_tokio"]
 tls_openssl_tokio = ["zbx_sender/tls_openssl_tokio"]
 
 [dependencies]
-anyhow = "1.0.57"
-clap = "4"
-csv = "1.1.6"
-tokio = { version = "1.18", optional = true, features = ["rt"] }
+anyhow = "1.0.104"
+clap = "4.6"
+csv = "1.4"
+tokio = { version = "1.53", optional = true, features = ["rt"] }
 zbx_sender = { path = "../..", features = ["clap", "tracing"] }

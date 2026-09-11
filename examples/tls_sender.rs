@@ -5,8 +5,8 @@ use std::convert::TryInto;
 use clap::Parser;
 
 use zbx_sender::{
-    tls::{ClapArgs, TlsConfig},
     Response, Result, Sender,
+    tls::{ClapArgs, TlsConfig},
 };
 
 #[derive(Parser)]

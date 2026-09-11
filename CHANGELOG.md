@@ -1,7 +1,9 @@
 # Changelog
 
 ## Unreleased
-
+- Update dependencies
+- Port to edition 2024
+ 
 ## [v0.5.0] - 2025-05-09
 - Update dependencies
 
