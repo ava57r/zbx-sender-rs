@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## [v0.6.0] - 2026-09-11
 - Update dependencies
 - Port to edition 2024
  
