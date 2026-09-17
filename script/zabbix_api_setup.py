@@ -101,15 +101,14 @@ def call_with_status(zabbix: Zabbix, message, *args, identifier=None):
 
 def wait_for_api(zabbix, timeout, report_interval=10):
     timeout = timeout * pow(10, 9)
-    elapsed = 0
     start_time = time.monotonic_ns()
     while True:
         try:
             zabbix.call('apiinfo.version', [])
             break
-        except Exception as e:
+        except Exception:
             current_time = time.monotonic_ns()
-            elapsed = current_time - start_time + pow(10, 9)
+            elapsed = current_time - start_time
             if elapsed < timeout:
                 if (elapsed // pow(10, 9)) % report_interval == 0:
                     print(
@@ -148,7 +147,8 @@ def main():
         '--tls-accept',
         help="Which TLS modes should the server accept",
         choices=['unencrypted', 'psk', 'cert'],
-        action='append'
+        action='append',
+        default=[]
     )
     parser.add_argument('zabbix_url')
     args = parser.parse_args()
@@ -187,7 +187,7 @@ def main():
             'cert': 4
         }
 
-        if args.tls_accept is None:
+        if not args.tls_accept:
             args.tls_accept = ['unencrypted']
         tls_accept_value = 0
         for mode in args.tls_accept:
