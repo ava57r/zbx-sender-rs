@@ -4,10 +4,9 @@ import argparse
 import json
 import os
 import time
-from sys import exit
 import urllib.request as rq
+from sys import exit
 from urllib.parse import urljoin
-
 
 ZABBIX_USER = os.environ.get('ZBX_USER', "Admin")
 ZABBIX_PASSWORD = os.environ.get('ZBX_PASSWORD', "zabbix")
@@ -96,7 +95,7 @@ def call_with_status(zabbix: Zabbix, message, *args, identifier=None):
         result = get_first_itemid(result, identifier)
         print(f" ({identifier}={result})", end='')
 
-    print('')  # Newline
+    print()  # Newline
     return result
 
 
@@ -121,7 +120,7 @@ def wait_for_api(zabbix, timeout, report_interval=10):
                     )
                 time.sleep(1)
                 continue
-            raise e
+            raise
 
 
 def main():
